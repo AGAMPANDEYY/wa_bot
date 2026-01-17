@@ -1,9 +1,19 @@
+import os
 import sqlite3
 import time
-from typing import List, Tuple, Optional
+from typing import List, Optional, Dict, Any
+
+try:
+    from supabase import create_client
+except Exception:  # pragma: no cover - optional dependency
+    create_client = None
 
 
-class Database:
+def _now_epoch() -> int:
+    return int(time.time())
+
+
+class SQLiteDatabase:
     """SQLite database for ground truth + audit logging"""
 
     def __init__(self, db_path: str = "data.db"):
@@ -80,7 +90,6 @@ class Database:
             """
         )
 
-        
         cursor.execute(
             """
             CREATE TABLE IF NOT EXISTS behavior_stats (
@@ -172,7 +181,7 @@ class Database:
             INSERT INTO audit_logs (user_id, action, details, timestamp)
             VALUES (?, ?, ?, ?)
             """,
-            (user_id, action, details, int(time.time())),
+            (user_id, action, details, _now_epoch()),
         )
 
     # === REMINDER OPERATIONS ===
@@ -243,7 +252,7 @@ class Database:
         if rescheduled:
             updates.append("reschedule_count = reschedule_count + 1")
             updates.append("last_rescheduled_at = ?")
-            params.append(int(time.time()))
+            params.append(_now_epoch())
         if status is not None:
             updates.append("status = ?")
             params.append(status)
@@ -253,7 +262,7 @@ class Database:
             return False
 
         updates.append("updated_at = ?")
-        params.append(int(time.time()))
+        params.append(_now_epoch())
         params.extend([reminder_id, user_id])
 
         query = f"UPDATE reminders SET {', '.join(updates)} WHERE id = ? AND user_id = ?"
@@ -359,7 +368,6 @@ class Database:
         conn.close()
         return results
 
-
     def update_reminder_mem0_id(self, reminder_id: int, user_id: str, mem0_id: str):
         conn = self.get_conn()
         cursor = conn.cursor()
@@ -369,7 +377,7 @@ class Database:
             SET mem0_memory_id = ?, updated_at = ?
             WHERE id = ? AND user_id = ?
             """,
-            (mem0_id, int(time.time()), reminder_id, user_id),
+            (mem0_id, _now_epoch(), reminder_id, user_id),
         )
         conn.commit()
         conn.close()
@@ -408,7 +416,7 @@ class Database:
             SET last_notified_at = ?, updated_at = ?
             WHERE id = ? AND user_id = ?
             """,
-            (notified_at, int(time.time()), reminder_id, user_id),
+            (notified_at, _now_epoch(), reminder_id, user_id),
         )
         self._log_audit(cursor, user_id, "reminder_notified", f"Notified {reminder_id}")
         conn.commit()
@@ -427,7 +435,7 @@ class Database:
                 value = excluded.value,
                 updated_at = excluded.updated_at
             """,
-            (user_id, key, value, int(time.time())),
+            (user_id, key, value, _now_epoch()),
         )
         self._log_audit(cursor, user_id, "set_preference", f"Set {key} = {value}")
         conn.commit()
@@ -458,7 +466,7 @@ class Database:
             SET mem0_memory_id = ?, updated_at = ?
             WHERE user_id = ? AND key = ?
             """,
-            (mem0_id, int(time.time()), user_id, key),
+            (mem0_id, _now_epoch(), user_id, key),
         )
         conn.commit()
         conn.close()
@@ -496,7 +504,7 @@ class Database:
             INSERT INTO conversation_messages (user_id, role, content, created_at)
             VALUES (?, ?, ?, ?)
             """,
-            (user_id, role, content, int(time.time())),
+            (user_id, role, content, _now_epoch()),
         )
         conn.commit()
         conn.close()
@@ -538,7 +546,7 @@ class Database:
                 last_event_at = ?
             WHERE user_id = ?
             """,
-            (int(time.time()), user_id),
+            (_now_epoch(), user_id),
         )
         conn.commit()
         conn.close()
@@ -554,7 +562,7 @@ class Database:
                 last_event_at = ?
             WHERE user_id = ?
             """,
-            (int(time.time()), user_id),
+            (_now_epoch(), user_id),
         )
         conn.commit()
         conn.close()
@@ -571,7 +579,7 @@ class Database:
                 last_event_at = ?
             WHERE user_id = ?
             """,
-            (minutes, int(time.time()), user_id),
+            (minutes, _now_epoch(), user_id),
         )
         conn.commit()
         conn.close()
@@ -588,7 +596,7 @@ class Database:
                 last_event_at = ?
             WHERE user_id = ?
             """,
-            (minutes, int(time.time()), user_id),
+            (minutes, _now_epoch(), user_id),
         )
         conn.commit()
         conn.close()
@@ -638,3 +646,416 @@ class Database:
             "avg_snooze_minutes": avg_snooze,
             "avg_complete_minutes": avg_complete,
         }
+
+
+class SupabaseDatabase:
+    """Supabase-backed database for production and multi-instance use."""
+
+    def __init__(self, url: str, key: str):
+        if not create_client:
+            raise RuntimeError("supabase client is not installed (pip install supabase)")
+        self.client = create_client(url, key)
+
+    def _response_data(self, response) -> Optional[List[Dict[str, Any]]]:
+        error = getattr(response, "error", None)
+        if error:
+            print(f"Supabase error: {error}")
+            return None
+        return getattr(response, "data", None)
+
+    def _select_one(self, table: str, filters: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        query = self.client.table(table).select("*")
+        for key, value in filters.items():
+            query = query.eq(key, value)
+        response = query.limit(1).execute()
+        data = self._response_data(response) or []
+        return data[0] if data else None
+
+    def _ensure_behavior_row(self, user_id: str):
+        payload = {
+            "user_id": user_id,
+            "create_count": 0,
+            "update_count": 0,
+            "snooze_count": 0,
+            "snooze_minutes_total": 0,
+            "done_count": 0,
+            "complete_minutes_total": 0,
+            "last_event_at": _now_epoch(),
+        }
+        self.client.table("behavior_stats").upsert(payload, on_conflict="user_id").execute()
+
+    # === REMINDER OPERATIONS ===
+
+    def create_reminder(
+        self,
+        user_id: str,
+        title: str,
+        description: str = "",
+        due_at_epoch: int = None,
+        category: str = None,
+    ) -> Optional[int]:
+        payload = {
+            "user_id": user_id,
+            "title": title,
+            "description": description or "",
+            "due_at_epoch": due_at_epoch,
+            "status": "active",
+            "category": category,
+            "created_at": _now_epoch(),
+            "updated_at": _now_epoch(),
+        }
+        response = self.client.table("reminders").insert(payload).execute()
+        data = self._response_data(response) or []
+        if not data:
+            return None
+        return data[0].get("id")
+
+    def get_reminder(self, reminder_id: int, user_id: str) -> Optional[Dict[str, Any]]:
+        return self._select_one("reminders", {"id": reminder_id, "user_id": user_id})
+
+    def update_reminder(
+        self,
+        reminder_id: int,
+        user_id: str,
+        title: str = None,
+        description: str = None,
+        due_at_epoch: int = None,
+        status: str = None,
+        rescheduled: bool = False,
+        category: str = None,
+    ) -> bool:
+        updates: Dict[str, Any] = {}
+        if title is not None:
+            updates["title"] = title
+        if description is not None:
+            updates["description"] = description
+        if due_at_epoch is not None:
+            updates["due_at_epoch"] = due_at_epoch
+            updates["last_notified_at"] = None
+        if category is not None:
+            updates["category"] = category
+        if rescheduled:
+            existing = self.get_reminder(reminder_id, user_id) or {}
+            current = existing.get("reschedule_count") or 0
+            updates["reschedule_count"] = current + 1
+            updates["last_rescheduled_at"] = _now_epoch()
+        if status is not None:
+            updates["status"] = status
+        if not updates:
+            return False
+        updates["updated_at"] = _now_epoch()
+        response = (
+            self.client.table("reminders")
+            .update(updates)
+            .eq("id", reminder_id)
+            .eq("user_id", user_id)
+            .execute()
+        )
+        data = self._response_data(response) or []
+        return bool(data)
+
+    def mark_reminder_done(self, reminder_id: int, user_id: str) -> bool:
+        return self.update_reminder(reminder_id, user_id, status="completed")
+
+    def delete_reminder(self, reminder_id: int, user_id: str) -> bool:
+        response = (
+            self.client.table("reminders")
+            .delete()
+            .eq("id", reminder_id)
+            .eq("user_id", user_id)
+            .execute()
+        )
+        data = self._response_data(response) or []
+        return bool(data)
+
+    def list_active_reminders(self, user_id: str) -> List[Dict[str, Any]]:
+        response = (
+            self.client.table("reminders")
+            .select("*")
+            .eq("user_id", user_id)
+            .eq("status", "active")
+            .order("due_at_epoch", desc=False)
+            .execute()
+        )
+        return self._response_data(response) or []
+
+    def list_rescheduled_reminders(self, user_id: str) -> List[Dict[str, Any]]:
+        response = (
+            self.client.table("reminders")
+            .select("*")
+            .eq("user_id", user_id)
+            .eq("status", "active")
+            .gt("reschedule_count", 0)
+            .order("last_rescheduled_at", desc=True)
+            .execute()
+        )
+        return self._response_data(response) or []
+
+    def list_reminder_times_by_category(self, user_id: str) -> List[Dict[str, Any]]:
+        response = (
+            self.client.table("reminders")
+            .select("category,due_at_epoch")
+            .eq("user_id", user_id)
+            .execute()
+        )
+        data = self._response_data(response) or []
+        return [row for row in data if row.get("category") is not None and row.get("due_at_epoch") is not None]
+
+    def list_completed_reminders(self, user_id: str) -> List[Dict[str, Any]]:
+        response = (
+            self.client.table("reminders")
+            .select("*")
+            .eq("user_id", user_id)
+            .eq("status", "completed")
+            .order("updated_at", desc=True)
+            .execute()
+        )
+        return self._response_data(response) or []
+
+    def list_all_reminders(self, user_id: str) -> List[Dict[str, Any]]:
+        response = (
+            self.client.table("reminders")
+            .select("*")
+            .eq("user_id", user_id)
+            .order("due_at_epoch", desc=False)
+            .execute()
+        )
+        return self._response_data(response) or []
+
+    def search_reminders(self, user_id: str, query: str) -> List[Dict[str, Any]]:
+        search_term = f"%{query}%"
+        response = (
+            self.client.table("reminders")
+            .select("*")
+            .eq("user_id", user_id)
+            .or_(f"title.ilike.{search_term},description.ilike.{search_term}")
+            .order("due_at_epoch", desc=False)
+            .execute()
+        )
+        return self._response_data(response) or []
+
+    def update_reminder_mem0_id(self, reminder_id: int, user_id: str, mem0_id: str):
+        (
+            self.client.table("reminders")
+            .update({"mem0_memory_id": mem0_id, "updated_at": _now_epoch()})
+            .eq("id", reminder_id)
+            .eq("user_id", user_id)
+            .execute()
+        )
+
+    def get_due_soon_reminders(
+        self,
+        user_id: str,
+        now_epoch: int,
+        lead_time_seconds: int = 600,
+    ) -> List[Dict[str, Any]]:
+        window_end = now_epoch + lead_time_seconds
+        response = (
+            self.client.table("reminders")
+            .select("*")
+            .eq("user_id", user_id)
+            .eq("status", "active")
+            .gte("due_at_epoch", now_epoch)
+            .lte("due_at_epoch", window_end)
+            .order("due_at_epoch", desc=False)
+            .execute()
+        )
+        data = self._response_data(response) or []
+        cutoff = now_epoch + lead_time_seconds
+        filtered = []
+        for row in data:
+            last_notified = row.get("last_notified_at")
+            due_at = row.get("due_at_epoch")
+            if due_at is None:
+                continue
+            if last_notified is None or last_notified < due_at - lead_time_seconds:
+                if due_at <= cutoff:
+                    filtered.append(row)
+        return filtered
+
+    def mark_reminder_notified(self, reminder_id: int, user_id: str, notified_at: int):
+        (
+            self.client.table("reminders")
+            .update({"last_notified_at": notified_at, "updated_at": _now_epoch()})
+            .eq("id", reminder_id)
+            .eq("user_id", user_id)
+            .execute()
+        )
+
+    # === PREFERENCE OPERATIONS ===
+
+    def set_preference(self, user_id: str, key: str, value: str):
+        payload = {
+            "user_id": user_id,
+            "key": key,
+            "value": value,
+            "updated_at": _now_epoch(),
+        }
+        self.client.table("preferences").upsert(payload, on_conflict="user_id,key").execute()
+
+    def get_preference(self, user_id: str, key: str) -> Optional[str]:
+        row = self._select_one("preferences", {"user_id": user_id, "key": key})
+        if not row:
+            return None
+        return row.get("value")
+
+    def get_all_preferences(self, user_id: str) -> List[Dict[str, Any]]:
+        response = (
+            self.client.table("preferences")
+            .select("key,value")
+            .eq("user_id", user_id)
+            .execute()
+        )
+        return self._response_data(response) or []
+
+    def update_preference_mem0_id(self, user_id: str, key: str, mem0_id: str):
+        (
+            self.client.table("preferences")
+            .update({"mem0_memory_id": mem0_id, "updated_at": _now_epoch()})
+            .eq("user_id", user_id)
+            .eq("key", key)
+            .execute()
+        )
+
+    # === AUDIT LOG ===
+
+    def log_audit(self, user_id: str, action: str, details: str = ""):
+        payload = {
+            "user_id": user_id,
+            "action": action,
+            "details": details,
+            "timestamp": _now_epoch(),
+        }
+        self.client.table("audit_logs").insert(payload).execute()
+
+    def get_recent_audit_logs(self, user_id: str, limit: int = 50) -> List[Dict[str, Any]]:
+        response = (
+            self.client.table("audit_logs")
+            .select("*")
+            .eq("user_id", user_id)
+            .order("timestamp", desc=True)
+            .limit(limit)
+            .execute()
+        )
+        return self._response_data(response) or []
+
+    def add_conversation_message(self, user_id: str, role: str, content: str):
+        payload = {
+            "user_id": user_id,
+            "role": role,
+            "content": content,
+            "created_at": _now_epoch(),
+        }
+        self.client.table("conversation_messages").insert(payload).execute()
+
+    def get_recent_conversation(self, user_id: str, limit: int = 6) -> List[Dict[str, Any]]:
+        response = (
+            self.client.table("conversation_messages")
+            .select("role,content,created_at")
+            .eq("user_id", user_id)
+            .order("created_at", desc=True)
+            .limit(limit)
+            .execute()
+        )
+        data = self._response_data(response) or []
+        return list(reversed(data))
+
+    # === BEHAVIOR STATS ===
+
+    def record_behavior_create(self, user_id: str):
+        self._ensure_behavior_row(user_id)
+        row = self._select_one("behavior_stats", {"user_id": user_id}) or {}
+        payload = {
+            "user_id": user_id,
+            "create_count": (row.get("create_count") or 0) + 1,
+            "update_count": row.get("update_count") or 0,
+            "snooze_count": row.get("snooze_count") or 0,
+            "snooze_minutes_total": row.get("snooze_minutes_total") or 0,
+            "done_count": row.get("done_count") or 0,
+            "complete_minutes_total": row.get("complete_minutes_total") or 0,
+            "last_event_at": _now_epoch(),
+        }
+        self.client.table("behavior_stats").upsert(payload, on_conflict="user_id").execute()
+
+    def record_behavior_update(self, user_id: str):
+        self._ensure_behavior_row(user_id)
+        row = self._select_one("behavior_stats", {"user_id": user_id}) or {}
+        payload = {
+            "user_id": user_id,
+            "create_count": row.get("create_count") or 0,
+            "update_count": (row.get("update_count") or 0) + 1,
+            "snooze_count": row.get("snooze_count") or 0,
+            "snooze_minutes_total": row.get("snooze_minutes_total") or 0,
+            "done_count": row.get("done_count") or 0,
+            "complete_minutes_total": row.get("complete_minutes_total") or 0,
+            "last_event_at": _now_epoch(),
+        }
+        self.client.table("behavior_stats").upsert(payload, on_conflict="user_id").execute()
+
+    def record_behavior_snooze(self, user_id: str, minutes: int):
+        self._ensure_behavior_row(user_id)
+        row = self._select_one("behavior_stats", {"user_id": user_id}) or {}
+        payload = {
+            "user_id": user_id,
+            "create_count": row.get("create_count") or 0,
+            "update_count": row.get("update_count") or 0,
+            "snooze_count": (row.get("snooze_count") or 0) + 1,
+            "snooze_minutes_total": (row.get("snooze_minutes_total") or 0) + minutes,
+            "done_count": row.get("done_count") or 0,
+            "complete_minutes_total": row.get("complete_minutes_total") or 0,
+            "last_event_at": _now_epoch(),
+        }
+        self.client.table("behavior_stats").upsert(payload, on_conflict="user_id").execute()
+
+    def record_behavior_done(self, user_id: str, minutes: int):
+        self._ensure_behavior_row(user_id)
+        row = self._select_one("behavior_stats", {"user_id": user_id}) or {}
+        payload = {
+            "user_id": user_id,
+            "create_count": row.get("create_count") or 0,
+            "update_count": row.get("update_count") or 0,
+            "snooze_count": row.get("snooze_count") or 0,
+            "snooze_minutes_total": row.get("snooze_minutes_total") or 0,
+            "done_count": (row.get("done_count") or 0) + 1,
+            "complete_minutes_total": (row.get("complete_minutes_total") or 0) + minutes,
+            "last_event_at": _now_epoch(),
+        }
+        self.client.table("behavior_stats").upsert(payload, on_conflict="user_id").execute()
+
+    def get_behavior_stats(self, user_id: str) -> dict:
+        row = self._select_one("behavior_stats", {"user_id": user_id})
+        if not row:
+            self._ensure_behavior_row(user_id)
+            row = self._select_one("behavior_stats", {"user_id": user_id}) or {}
+        snooze_count = row.get("snooze_count") or 0
+        snooze_total = row.get("snooze_minutes_total") or 0
+        done_count = row.get("done_count") or 0
+        complete_total = row.get("complete_minutes_total") or 0
+        avg_snooze = round(snooze_total / snooze_count, 1) if snooze_count else 0
+        avg_complete = round(complete_total / done_count, 1) if done_count else 0
+        return {
+            "create_count": row.get("create_count") or 0,
+            "update_count": row.get("update_count") or 0,
+            "snooze_count": snooze_count,
+            "snooze_minutes_total": snooze_total,
+            "done_count": done_count,
+            "complete_minutes_total": complete_total,
+            "last_event_at": row.get("last_event_at"),
+            "avg_snooze_minutes": avg_snooze,
+            "avg_complete_minutes": avg_complete,
+        }
+
+
+class Database:
+    """Select Supabase when configured, otherwise fallback to SQLite."""
+
+    def __init__(self, db_path: str = "data.db"):
+        url = os.getenv("SUPABASE_URL", "").strip()
+        key = os.getenv("SUPABASE_KEY", "").strip()
+        if url and key:
+            self.backend = SupabaseDatabase(url, key)
+        else:
+            self.backend = SQLiteDatabase(db_path)
+
+    def __getattr__(self, name: str):
+        return getattr(self.backend, name)

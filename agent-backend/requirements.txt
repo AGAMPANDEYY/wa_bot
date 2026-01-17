@@ -7,3 +7,4 @@ mem0ai
 dateparser
 requests
 python-dotenv
+supabase

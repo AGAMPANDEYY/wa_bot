@@ -10,10 +10,13 @@ from fastapi.staticfiles import StaticFiles
 import anthropic
 from mem0 import MemoryClient
 import dateparser
+from dateparser.search import search_dates
 import hmac
 import hashlib
 import asyncio
 import threading
+import re
+import html
 
 from db import Database
 from mem0_store import Mem0Store
@@ -35,6 +38,8 @@ SLACK_API_BASE = "https://slack.com/api"
 SLACK_NOTIFY_ENABLED = os.getenv("SLACK_NOTIFY_ENABLED", "1").lower() in ("1", "true", "yes", "on")
 SLACK_NOTIFY_INTERVAL_SECONDS = int(os.getenv("SLACK_NOTIFY_INTERVAL_SECONDS", "60"))
 BACKGROUND_MEM0_WRITES = os.getenv("BACKGROUND_MEM0_WRITES", "1").lower() in ("1", "true", "yes", "on")
+DEBUG_SYSTEM_PROMPT = os.getenv("DEBUG_SYSTEM_PROMPT", "0").lower() in ("1", "true", "yes", "on")
+SYSTEM_PROMPT_LOG_PATH = os.getenv("SYSTEM_PROMPT_LOG_PATH", "")
 
 # Initialize
 app = FastAPI()
@@ -64,6 +69,19 @@ debug_context = {
 pending_actions = {}
 slack_event_cache = {}
 slack_user_channels = {}
+user_time_context = {}
+
+def sanitize_slack_text(text: str) -> str:
+    """Normalize Slack markup into plain text for NLP parsing."""
+    if not text:
+        return ""
+    cleaned = html.unescape(text)
+    cleaned = re.sub(r"<@([A-Z0-9]+)>", r"@\1", cleaned)
+    cleaned = re.sub(r"<#([A-Z0-9]+)\|([^>]+)>", r"#\2", cleaned)
+    cleaned = re.sub(r"<([^>|]+)\|([^>]+)>", r"\2", cleaned)
+    cleaned = re.sub(r"<([^>]+)>", r"\1", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned
 
 def _reminder_value(reminder: Any, key: str, index: Optional[int] = None):
     if isinstance(reminder, dict):
@@ -140,7 +158,7 @@ TOOLS = [
     },
     {
         "name": "list_reminders",
-        "description": "List all active reminders or filter by status",
+        "description": "List reminders. Use status='active' for upcoming, status='completed' for archived, status='all' for everything.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -264,11 +282,25 @@ def parse_datetime(date_str: str, timezone_str: str = DEFAULT_TIMEZONE) -> Optio
         debug_context["tool_calls"].append({"error": f"Date parse failed (tz): {str(e)}"})
 
     try:
+        matches = search_dates(date_str, settings=settings)
+        if matches:
+            return int(matches[0][1].timestamp())
+    except Exception as e:
+        debug_context["tool_calls"].append({"error": f"Date search failed (tz): {str(e)}"})
+
+    try:
         dt = dateparser.parse(date_str)
         if dt:
             return int(dt.timestamp())
     except Exception as e:
         debug_context["tool_calls"].append({"error": f"Date parse failed (fallback): {str(e)}"})
+
+    try:
+        matches = search_dates(date_str)
+        if matches:
+            return int(matches[0][1].timestamp())
+    except Exception as e:
+        debug_context["tool_calls"].append({"error": f"Date search failed (fallback): {str(e)}"})
 
     try:
         dt = datetime.fromisoformat(date_str)
@@ -387,7 +419,7 @@ def build_slack_reminder_blocks(title: str, due_label: str, reminder_id: int) ->
     return [
         {
             "type": "section",
-            "text": {"type": "mrkdwn", "text": f"*{title}*\\nDue {due_label}"}
+            "text": {"type": "mrkdwn", "text": f"*{title}*\nDue {due_label}"}
         },
         {
             "type": "actions",
@@ -516,8 +548,49 @@ def get_common_times_by_category(user_id: str) -> Dict[str, str]:
         common[category] = common_time
     return common
 
-def execute_create_reminder(user_id: str, title: str, due_str: str, description: str = "") -> Dict[str, Any]:
+def format_time_12h(time_24h: str) -> str:
+    try:
+        hour_str, minute_str = time_24h.split(":")
+        dt = datetime.now().replace(hour=int(hour_str), minute=int(minute_str), second=0, microsecond=0)
+        return dt.strftime("%I:%M %p").lstrip("0")
+    except Exception:
+        return time_24h
+
+def execute_create_reminder(
+    user_id: str,
+    title: str,
+    due_str: str,
+    description: str = "",
+    allow_unconfirmed: bool = False,
+) -> Dict[str, Any]:
     """Create a new reminder"""
+    if not allow_unconfirmed:
+        context = user_time_context.get(user_id, {})
+        if context and not context.get("has_time"):
+            category = infer_category(title, description)
+            common_times = get_common_times_by_category(user_id)
+            suggested_time = common_times.get(category)
+            pending_actions[user_id] = {
+                "type": "confirm_time",
+                "title": title,
+                "description": description,
+                "due_str": due_str,
+                "category": category,
+                "suggested_time": suggested_time,
+            }
+            if suggested_time:
+                prompt = (
+                    f"I usually schedule {category} reminders at "
+                    f"{format_time_12h(suggested_time)}. Would you like me to use that time?"
+                )
+            else:
+                prompt = "What time should I set this reminder for?"
+            return {
+                "success": False,
+                "error": "Time confirmation needed",
+                "pending": pending_actions[user_id],
+                "prompt": prompt,
+            }
     due_epoch = parse_datetime(due_str)
     if not due_epoch:
         return {"success": False, "error": "Could not parse date"}
@@ -770,64 +843,33 @@ def execute_snooze_reminder(user_id: str, reminder_id: int, snooze_str: str) -> 
 
 
 def execute_list_reminders(user_id: str, status: str = "active") -> Dict[str, Any]:
-    """List reminders by status - using Mem0 as primary source"""
-    
-    # Get from Mem0 first
-    if status == "active":
-        memories = mem0_store.get_all_memories(
-            user_id=user_id,
-            categories=[mem0_store.CAT_REMINDER_ACTIVE]
-        )
-    elif status == "completed":
-        memories = mem0_store.get_all_memories(
-            user_id=user_id,
-            categories=[mem0_store.CAT_REMINDER_ARCHIVED]
-        )
-    else:
-        # Get both
-        active = mem0_store.get_all_memories(
-            user_id=user_id,
-            categories=[mem0_store.CAT_REMINDER_ACTIVE]
-        )
-        archived = mem0_store.get_all_memories(
-            user_id=user_id,
-            categories=[mem0_store.CAT_REMINDER_ARCHIVED]
-        )
-        memories = active + archived
-    
-    formatted = []
-    for mem in memories:
-        metadata = mem.get("metadata", {})
-        formatted.append({
-            "id": metadata.get("reminder_id", mem.get("id")),
-            "title": metadata.get("title", ""),
-            "description": metadata.get("description", ""),
-            "due_at": format_due_datetime(metadata.get("due_at_epoch")),
-            "status": metadata.get("status", status),
-            "memory": mem.get("memory", "")
-        })
-    
-    # Fallback to DB if Mem0 is empty (optional)
-    if not formatted:
-        try:
-            if status == "active":
-                reminders = db.list_active_reminders(user_id)
-            elif status == "completed":
-                reminders = db.list_completed_reminders(user_id)
-            else:
-                reminders = db.list_all_reminders(user_id)
-            
-            for r in reminders:
-                formatted.append({
-                    "id": _reminder_value(r, "id", 0),
-                    "title": _reminder_value(r, "title", 2),
-                    "description": _reminder_value(r, "description", 3),
-                    "due_at": format_due_datetime(_reminder_value(r, "due_at_epoch", 4)),
-                    "status": _reminder_value(r, "status", 5),
-                    "category": _reminder_value(r, "category", 6)
-                })
-        except:
-            pass  # DB might be locked, that's okay
+    """List reminders by status using DB as source of truth."""
+    formatted: List[Dict[str, Any]] = []
+    try:
+        if status == "active":
+            reminders = db.list_active_reminders(user_id)
+        elif status == "completed":
+            reminders = db.list_completed_reminders(user_id)
+        elif status == "rescheduled":
+            reminders = db.list_rescheduled_reminders(user_id)
+        else:
+            reminders = db.list_all_reminders(user_id)
+
+        for r in reminders:
+            due_epoch = _reminder_value(r, "due_at_epoch", 4)
+            formatted.append({
+                "id": _reminder_value(r, "id", 0),
+                "title": _reminder_value(r, "title", 2),
+                "description": _reminder_value(r, "description", 3),
+                "due_at_epoch": due_epoch,
+                "due_at": format_due_datetime(due_epoch),
+                "status": _reminder_value(r, "status", 5),
+                "category": _reminder_value(r, "category", 6),
+                "reschedule_count": _reminder_value(r, "reschedule_count", 10),
+                "last_rescheduled_at": _reminder_value(r, "last_rescheduled_at", 11),
+            })
+    except Exception:
+        pass  # DB might be unavailable temporarily
     
     def build_summary(items: List[Dict[str, Any]]) -> str:
         if not items:
@@ -839,6 +881,7 @@ def execute_list_reminders(user_id: str, status: str = "active") -> Dict[str, An
                 grouped["other"].append(item)
             else:
                 grouped[state].append(item)
+        total = len(items)
         def format_group(title: str, entries: List[Dict[str, Any]]) -> str:
             if not entries:
                 return ""
@@ -846,7 +889,7 @@ def execute_list_reminders(user_id: str, status: str = "active") -> Dict[str, An
             for entry in entries:
                 key = (entry.get("title", "").strip(), entry.get("due_at", ""))
                 counts[key] = counts.get(key, 0) + 1
-            lines = [f"{title} ({len(entries)}):"]
+            lines = [f"{title} ({len(entries)})"]
             for (title_text, due_at), count in counts.items():
                 suffix = f" ×{count}" if count > 1 else ""
                 due = f" — {due_at}" if due_at else ""
@@ -855,12 +898,16 @@ def execute_list_reminders(user_id: str, status: str = "active") -> Dict[str, An
         rescheduled = [item for item in grouped["active"] if item.get("reschedule_count", 0)]
         upcoming = [item for item in grouped["active"] if not item.get("reschedule_count", 0)]
         sections = [
-            format_group("Rescheduled", rescheduled),
+            format_group("Snoozed/Rescheduled", rescheduled),
             format_group("Upcoming", upcoming),
-            format_group("Completed", grouped["completed"]),
+            format_group("Archived", grouped["completed"]),
             format_group("Other", grouped["other"]),
         ]
-        return "\n\n".join(section for section in sections if section)
+        header = f"Here’s your reminders overview ({total} total)"
+        body = "\n\n".join(section for section in sections if section)
+        if not body:
+            return header
+        return f"{header}\n\n{body}"
 
     summary = build_summary(formatted)
     return {"success": True, "reminders": formatted, "count": len(formatted), "summary": summary}
@@ -1068,9 +1115,13 @@ def is_list_intent(text: str) -> bool:
             "list reminders",
             "list all reminders",
             "list my reminders",
+            "all my reminders",
             "reminders i have",
+            "my reminders",
             "show reminders",
             "show my reminders",
+            "tell me about my reminders",
+            "tell me about all my reminders",
             "what reminders",
             "what are my reminders",
             "what's coming up",
@@ -1157,6 +1208,8 @@ def get_mem0_context(user_message: str, user_id: str = "default_user", skip_mem0
 async def run_agentic_loop(user_message: str, user_id: str = "default_user") -> str:
     """Main agentic loop with Claude"""
 
+    has_time = message_mentions_time(user_message)
+    user_time_context[user_id] = {"has_time": has_time}
     pending = pending_actions.get(user_id)
     if pending and pending.get("type") == "update_due":
         if is_confirmation(user_message):
@@ -1191,6 +1244,34 @@ async def run_agentic_loop(user_message: str, user_id: str = "default_user") -> 
             pending_actions.pop(user_id, None)
             return "Okay. Which reminder should I update instead?"
         return pending.get("question", "Which reminder should I update?")
+    if pending and pending.get("type") == "confirm_time":
+        lowered = user_message.strip().lower()
+        if lowered in {"yes", "y", "sure", "ok", "okay", "use it", "go ahead"}:
+            suggested_time = pending.get("suggested_time")
+            if not suggested_time:
+                return "What time should I set it for?"
+            pending_actions.pop(user_id, None)
+            result = execute_create_reminder(
+                user_id=user_id,
+                title=pending["title"],
+                due_str=f"{pending['due_str']} {suggested_time}",
+                description=pending.get("description", ""),
+                allow_unconfirmed=True,
+            )
+            return result.get("message", "Reminder created.")
+        if lowered in {"no", "nope", "nah"}:
+            return "What time should I set it for?"
+        if message_mentions_time(user_message):
+            pending_actions.pop(user_id, None)
+            result = execute_create_reminder(
+                user_id=user_id,
+                title=pending["title"],
+                due_str=user_message,
+                description=pending.get("description", ""),
+                allow_unconfirmed=True,
+            )
+            return result.get("message", "Reminder created.")
+        return "What time should I set it for?"
         if is_rejection(user_message) and not message_mentions_time(user_message):
             pending_actions.pop(user_id, None)
             return "Okay. What time should I set it for?"
@@ -1210,7 +1291,7 @@ async def run_agentic_loop(user_message: str, user_id: str = "default_user") -> 
     mem0_context = get_mem0_context(user_message, user_id, skip_mem0=skip_mem0)
 
     common_times = get_common_times_by_category(user_id)
-    has_time = message_mentions_time(user_message)
+    
     category_guess = infer_category(user_message, "")
 
     conversation_history = []
@@ -1230,37 +1311,13 @@ async def run_agentic_loop(user_message: str, user_id: str = "default_user") -> 
         except Exception:
             pass
 
-    if is_create_intent(user_message) and not has_time:
-        suggested_time = common_times.get(category_guess)
-        if suggested_time:
-            return (
-                f"I usually schedule {category_guess} reminders at {suggested_time}. "
-                "Would you like me to use that time?"
-            )
-        return "What time should I set this reminder for?"
-
-    if is_list_intent(user_message):
-        result = execute_list_reminders(user_id=user_id, status="all")
-        if result.get("summary"):
-            return result["summary"]
-        return f"You have {result.get('count', 0)} reminders."
-
-    if is_search_intent(user_message):
-        query = user_message
-        result = execute_search_reminders(user_id=user_id, query=query)
-        if result.get("count", 0) == 0:
-            return "I couldn't find any reminders that match that."
-        lines = [f"Found {result['count']} reminder(s):"]
-        for item in result.get("reminders", []):
-            due_at = item.get("due_at", "N/A")
-            lines.append(f"• {item.get('title', '')} — {due_at}")
-        return "\n".join(lines)
-    
     # Try to get DB reminders, but don't fail if DB is locked
     db_reminders = []
+    db_rescheduled = []
     if db:
         try:
             db_reminders = db.list_active_reminders(user_id)
+            db_rescheduled = db.list_rescheduled_reminders(user_id)
         except Exception as e:
             debug_context["db_changes"].append({
                 "action": "db_read_failed",
@@ -1274,39 +1331,79 @@ async def run_agentic_loop(user_message: str, user_id: str = "default_user") -> 
         })
     
     # Build system prompt
-    system_prompt = f"""You are a helpful reminder assistant. You have access to tools to manage reminders.
+    system_prompt = f"""You are a proactive, friendly reminder companion in Slack. You help users stay organized while learning their habits and preferences over time.
 
-Current context from Mem0 memory:
-- Active reminders: {json.dumps(mem0_context['active_reminders'], indent=2)}
-- Rescheduled active reminders: {json.dumps(mem0_context['rescheduled_active_reminders'], indent=2)}
-- User preferences: {json.dumps(mem0_context['preferences'], indent=2)}
-- Behavior summary: {json.dumps(mem0_context['behavior'], indent=2)}
-- Recent conversation: {json.dumps(mem0_context['conversation_history'], indent=2)}
+## PERSONALITY & TONE
+- Be conversational, supportive, and concise
+- Use natural language (avoid robotic responses)
+- Celebrate completions and encourage productivity
+- Match the user's communication style (formal/casual)
+- Proactively suggest improvements based on patterns
 
-Ground truth active reminders from database:
+## CURRENT CONTEXT
+**Active Reminders:**
 {json.dumps([{
-    'id': _reminder_value(r, "id", 0), 
-    'title': _reminder_value(r, "title", 2), 
+    'id': _reminder_value(r, "id", 0),
+    'title': _reminder_value(r, "title", 2),
     'description': _reminder_value(r, "description", 3),
     'due_at': format_due_datetime(_reminder_value(r, "due_at_epoch", 4)),
     'status': _reminder_value(r, "status", 5),
     'category': _reminder_value(r, "category", 6)
-} for r in db_reminders], indent=2) if db_reminders else "Database unavailable - using Mem0 as primary source"}
+} for r in db_reminders], indent=2) if db_reminders else "No active reminders"}
 
-Current time: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
-Default timezone: {DEFAULT_TIMEZONE}
-Common reminder times by category (24h): {json.dumps(common_times, indent=2)}
-User mentioned time in this message: {"yes" if has_time else "no"}
+**Rescheduled Active Reminders:**
+{json.dumps([{
+    'id': _reminder_value(r, "id", 0),
+    'title': _reminder_value(r, "title", 2),
+    'description': _reminder_value(r, "description", 3),
+    'due_at': format_due_datetime(_reminder_value(r, "due_at_epoch", 4)),
+    'status': _reminder_value(r, "status", 5),
+    'category': _reminder_value(r, "category", 6),
+    'reschedule_count': _reminder_value(r, "reschedule_count", 10)
+} for r in db_rescheduled], indent=2) if db_rescheduled else "No rescheduled reminders"}
 
-When the user asks about reminders ambiguously (e.g., "update my meeting"), use the clarify_reminder tool if multiple matches exist.
-Always parse natural language dates like "tomorrow", "next Monday", "in 2 hours".
-If the user did NOT specify a time, ask a confirmation question and suggest the common time for the inferred category (if available).
-Never mention internal IDs like reminder_id or mem0_id unless the user explicitly asks.
-When listing reminders, format clean sections (Active/Completed) with bullets. If the tool result includes a "summary", use it verbatim.
-Never mention Mem0, database, or internal storage in user-facing responses.
-Only delete memories when the user explicitly asks to delete or remove something.
+**User Patterns:**
+- Preferences: {json.dumps(mem0_context['preferences'], indent=2)}
+- Behavior: {json.dumps(mem0_context['behavior'], indent=2)}
+- Recent context: {json.dumps(mem0_context['conversation_history'][-3:], indent=2)}
 
-Note: The system uses Mem0 as the primary storage. Database is used for backup/sync when available."""
+**Time Context:**
+- Current: {datetime.now().strftime("%A, %B %d, %Y at %I:%M %p")}
+- Timezone: {DEFAULT_TIMEZONE}
+- Suggested times: {json.dumps(common_times, indent=2)}
+
+## CORE BEHAVIORS
+1. Natural language first: parse "tomorrow at 3", "next Monday", "in 2 hours" automatically
+2. Smart defaults: if no time given, suggest category-appropriate time from user patterns/common times, then confirm
+3. Clarify ambiguity: use clarify_reminder tool when multiple matches exist
+4. Proactive insights: notice patterns and suggest improvements when appropriate
+5. DB is ground truth: always use DB-backed tools for reminder status/times; Mem0 is context only
+6. Clean responses: use tool summaries verbatim; never expose internal IDs or storage details
+7. Respect user intent: only delete when explicitly requested
+8. Accept short-term reminders (minutes) without refusing; never scold the user.
+9. Never change or round user-provided times; preserve exact minutes/hours. If unclear, ask a brief clarification.
+10. If the user asks for archived/completed reminders, call list_reminders with status="completed".
+
+## RESPONSE GUIDELINES
+- Confirmations: "Got it! I'll remind you about {{title}} on {{date}}"
+- Lists: always call list_reminders and return its formatted summary verbatim with no extra text.
+- Errors: be helpful, not apologetic ("Let me help you fix that...")
+- Follow-ups: suggest related actions when relevant
+
+Keep it human, helpful, and focused on the user's goals."""
+
+    if DEBUG_SYSTEM_PROMPT:
+        try:
+            print("=== SYSTEM PROMPT START ===")
+            print(system_prompt)
+            print("=== SYSTEM PROMPT END ===")
+            if SYSTEM_PROMPT_LOG_PATH:
+                with open(SYSTEM_PROMPT_LOG_PATH, "a", encoding="utf-8") as log_file:
+                    log_file.write("=== SYSTEM PROMPT START ===\n")
+                    log_file.write(system_prompt)
+                    log_file.write("\n=== SYSTEM PROMPT END ===\n")
+        except Exception:
+            pass
 
     # Initialize message history
     messages = [{"role": "user", "content": user_message}]
@@ -1314,6 +1411,7 @@ Note: The system uses Mem0 as the primary storage. Database is used for backup/s
     # Agentic loop
     max_iterations = 10
     iteration = 0
+    last_list_summary = None
     
     while iteration < max_iterations:
         iteration += 1
@@ -1333,6 +1431,9 @@ Note: The system uses Mem0 as the primary storage. Database is used for backup/s
             for block in response.content:
                 if block.type == "text":
                     final_text += block.text
+
+            if last_list_summary:
+                final_text = last_list_summary
 
             if db:
                 try:
@@ -1368,6 +1469,32 @@ Note: The system uses Mem0 as the primary storage. Database is used for backup/s
                     
                     # Execute tool
                     result = execute_tool(tool_name, tool_input, user_id)
+                    if tool_name == "list_reminders" and isinstance(result, dict):
+                        summary = result.get("summary")
+                        if summary:
+                            last_list_summary = summary
+                    if tool_name == "create_reminder" and isinstance(result, dict):
+                        pending = result.get("pending", {})
+                        if pending.get("type") == "confirm_time":
+                            prompt = result.get("prompt")
+                            if prompt:
+                                if db:
+                                    try:
+                                        db.add_conversation_message(user_id, "assistant", prompt)
+                                    except Exception:
+                                        pass
+                                if BACKGROUND_MEM0_WRITES:
+                                    run_in_background(
+                                        mem0_store.add_conversation,
+                                        f"User: {user_message}\nAssistant: {prompt}",
+                                        user_id
+                                    )
+                                else:
+                                    mem0_store.add_conversation(
+                                        f"User: {user_message}\nAssistant: {prompt}",
+                                        user_id
+                                    )
+                                return prompt
                     
                     tool_results.append({
                         "type": "tool_result",
@@ -1435,7 +1562,8 @@ async def slack_events(
         if event.get("type") == "message" and not event.get("bot_id"):
             user_id = event.get("user", "default_user")
             channel = event.get("channel")
-            text = event.get("text", "")
+            raw_text = event.get("text", "")
+            text = sanitize_slack_text(raw_text)
             if user_id and channel:
                 slack_user_channels[user_id] = channel
             if text and channel:
