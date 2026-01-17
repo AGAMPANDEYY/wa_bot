@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>RemindMe Mem0!</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;600&family=Manrope:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="page">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">Memory-first reminders</p>
+          <h1>RemindMe Mem0!</h1>
+          <p class="subhead">
+            A calm, proactive assistant that remembers your context, nudges you
+            at the right time, and keeps your day tidy.
+          </p>
+        </div>
+        <div class="status">
+          <div class="status-card">
+            <span class="dot"></span>
+            <div>
+              <p class="status-title">Agent status</p>
+              <p class="status-body">Online, tuned for short replies</p>
+            </div>
+          </div>
+          <div class="status-card">
+            <p class="status-title">Preferences</p>
+            <div class="chips">
+              <span>Asia/Kolkata</span>
+              <span>Morning 09:00</span>
+              <span>Emoji off</span>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <section class="panel conversation">
+          <div class="panel-header">
+            <h2>Conversation</h2>
+            <span class="panel-tag">Live prototype</span>
+          </div>
+
+          <div id="chat" class="chat">
+            <div class="message bot">
+              <p class="bubble">
+                Hey Agam! Want me to set something up today?
+              </p>
+              <span class="meta">09:12 AM</span>
+            </div>
+            <div class="message user">
+              <p class="bubble">Remind me to pay rent tomorrow morning.</p>
+              <span class="meta">09:13 AM</span>
+            </div>
+            <div class="message bot">
+              <p class="bubble">
+                Got it. I will remind you to pay rent on Thu, 9:00 AM.
+              </p>
+              <span class="meta">09:13 AM</span>
+            </div>
+          </div>
+
+          <div class="composer">
+            <div class="quick-actions">
+              <button data-quick="What is coming up today?">Today</button>
+              <button data-quick="Snooze 10 minutes">Snooze 10m</button>
+              <button data-quick="Show completed rent reminders">
+                Search archive
+              </button>
+              <button data-quick="Reschedule to 6pm">Reschedule</button>
+            </div>
+            <div class="input-row">
+              <input
+                id="input"
+                type="text"
+                placeholder="Say: Remind me to call mom at 6pm"
+                autocomplete="off"
+              />
+              <button id="send">Send</button>
+            </div>
+          </div>
+        </section>
+
+        <aside class="panel summary">
+          <div class="panel-header">
+            <h2>Upcoming</h2>
+            <span class="panel-tag">Next 7 days</span>
+          </div>
+          <div class="cards" id="upcoming">
+            <div class="card">
+              <div>
+                <p class="card-title">Pay rent</p>
+                <p class="card-sub">Thu, 9:00 AM</p>
+              </div>
+              <span class="pill">Active</span>
+            </div>
+            <div class="card">
+              <div>
+                <p class="card-title">Renew car insurance</p>
+                <p class="card-sub">Fri, 3:00 PM</p>
+              </div>
+              <span class="pill">Active</span>
+            </div>
+            <div class="card">
+              <div>
+                <p class="card-title">Send deck to Priya</p>
+                <p class="card-sub">Mon, 10:00 AM</p>
+              </div>
+              <span class="pill">Active</span>
+            </div>
+          </div>
+
+          <div class="panel-header spaced">
+            <h2>Archive</h2>
+            <span class="panel-tag">Recent done</span>
+          </div>
+          <div class="archive" id="archive">
+            <div>
+              <p class="archive-title">Call mom</p>
+              <p class="archive-sub">Completed yesterday</p>
+            </div>
+            <div>
+              <p class="archive-title">Pay electricity bill</p>
+              <p class="archive-sub">Completed Tue</p>
+            </div>
+          </div>
+        </aside>
+      </main>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>
