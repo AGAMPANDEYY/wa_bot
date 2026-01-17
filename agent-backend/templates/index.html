@@ -1,0 +1,711 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>RemindMe Mem0!</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <style>
+        :root {
+            color-scheme: light;
+            --bg: #f5f6f8;
+            --ink: #121826;
+            --muted: #6b7280;
+            --panel: #ffffff;
+            --line: #e5e7eb;
+            --primary: #10b981;
+            --secondary: #6366f1;
+            --shadow: 0 16px 40px rgba(15, 23, 42, 0.08);
+            --shadow-soft: 0 8px 20px rgba(15, 23, 42, 0.06);
+            --radius-lg: 22px;
+            --radius-md: 16px;
+            --radius-sm: 12px;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg);
+            color: var(--ink);
+            min-height: 100vh;
+        }
+
+        .app {
+            display: grid;
+            grid-template-columns: 240px minmax(0, 1fr);
+            min-height: 100vh;
+        }
+
+        .sidebar {
+            background: #ffffff;
+            border-right: 1px solid var(--line);
+            display: flex;
+            flex-direction: column;
+            padding: 20px 16px;
+            gap: 20px;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-weight: 600;
+            font-size: 18px;
+        }
+
+        .brand-mark {
+            width: 36px;
+            height: 36px;
+            border-radius: 10px;
+            background: linear-gradient(135deg, #10b981, #34d399);
+            display: grid;
+            place-items: center;
+            color: #fff;
+            font-weight: 700;
+        }
+
+        .nav {
+            display: grid;
+            gap: 6px;
+        }
+
+        .nav-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 12px;
+            border-radius: 10px;
+            font-size: 14px;
+            color: var(--muted);
+            cursor: pointer;
+        }
+
+        .nav-item.active {
+            background: #f1f5f9;
+            color: var(--ink);
+            font-weight: 600;
+        }
+
+        .user-box {
+            margin-top: auto;
+            border-top: 1px solid var(--line);
+            padding-top: 16px;
+            display: grid;
+            gap: 10px;
+        }
+
+        .user-box label {
+            font-size: 12px;
+            color: var(--muted);
+        }
+
+        .user-box input {
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            padding: 8px 10px;
+            font-size: 13px;
+        }
+
+        .main {
+            display: flex;
+            flex-direction: column;
+            padding: 24px 32px 32px;
+            gap: 20px;
+        }
+
+        .topbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .topbar h1 {
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        .topbar-actions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .search {
+            border: 1px solid var(--line);
+            border-radius: 999px;
+            padding: 8px 12px;
+            font-size: 13px;
+            min-width: 220px;
+        }
+
+        .ghost {
+            border: 1px solid var(--line);
+            background: #fff;
+            border-radius: 999px;
+            padding: 8px 12px;
+            font-size: 13px;
+            cursor: pointer;
+        }
+
+        .hero {
+            position: relative;
+            background: #ffffff;
+            border-radius: var(--radius-lg);
+            padding: 40px;
+            min-height: 220px;
+            box-shadow: var(--shadow);
+            overflow: hidden;
+        }
+
+        .hero::before {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background-image: radial-gradient(#e5e7eb 1px, transparent 1px);
+            background-size: 18px 18px;
+            opacity: 0.5;
+        }
+
+        .orb {
+            position: absolute;
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            background: radial-gradient(circle at 30% 30%, #b6f5c6, #10b981 60%, #0f766e 100%);
+            top: 24px;
+            right: 36%;
+            box-shadow: 0 20px 40px rgba(16, 185, 129, 0.35);
+        }
+
+        .hero-content {
+            position: relative;
+            z-index: 1;
+            text-align: center;
+            display: grid;
+            gap: 10px;
+        }
+
+        .hero-title {
+            font-size: 32px;
+            font-weight: 600;
+        }
+
+        .hero-sub {
+            color: var(--muted);
+        }
+
+        .chat-shell {
+            background: #ffffff;
+            border: 1px solid var(--line);
+            border-radius: var(--radius-lg);
+            padding: 20px;
+            box-shadow: var(--shadow-soft);
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .chat-messages {
+            max-height: 360px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .message {
+            max-width: 80%;
+            padding: 10px 14px;
+            border-radius: 14px;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+
+        .message.user {
+            align-self: flex-end;
+            background: #111827;
+            color: #fff;
+        }
+
+        .message.assistant {
+            align-self: flex-start;
+            background: #f3f4f6;
+        }
+
+        .message.system {
+            align-self: center;
+            background: #fff7e2;
+            color: #7d5a1a;
+        }
+
+        .list-card {
+            background: #f8fafc;
+            border: 1px solid var(--line);
+            border-radius: 14px;
+            padding: 14px 16px;
+            display: grid;
+            gap: 12px;
+        }
+
+        .list-section h4 {
+            margin: 0 0 6px;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--muted);
+        }
+
+        .list-section ul {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+            display: grid;
+            gap: 6px;
+        }
+
+        .list-section li {
+            font-size: 14px;
+        }
+
+        .composer {
+            display: flex;
+            gap: 12px;
+            border: 1px solid var(--line);
+            border-radius: 14px;
+            padding: 10px 12px;
+        }
+
+        .composer input {
+            flex: 1;
+            border: none;
+            outline: none;
+            font-size: 14px;
+        }
+
+        .send {
+            background: var(--primary);
+            color: #fff;
+            border: none;
+            border-radius: 10px;
+            padding: 8px 14px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        .toast-container {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            display: grid;
+            gap: 12px;
+            z-index: 50;
+        }
+
+        .toast {
+            background: #ffffff;
+            border: 1px solid var(--line);
+            border-radius: 14px;
+            box-shadow: var(--shadow);
+            padding: 12px 14px;
+            display: grid;
+            gap: 6px;
+            min-width: 260px;
+        }
+
+        .toast-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .toast-button {
+            border: 1px solid var(--line);
+            background: #fff;
+            border-radius: 999px;
+            padding: 6px 10px;
+            font-size: 12px;
+            cursor: pointer;
+        }
+
+        .toast-button.primary {
+            background: var(--primary);
+            border-color: var(--primary);
+            color: #fff;
+        }
+
+        .debug-panel {
+            position: fixed;
+            top: 0;
+            right: 0;
+            height: 100%;
+            width: 360px;
+            background: #0f172a;
+            color: #e2e8f0;
+            transform: translateX(100%);
+            transition: transform 0.3s ease;
+            z-index: 40;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .debug-panel.open {
+            transform: translateX(0);
+        }
+
+        .debug-header {
+            padding: 16px 20px;
+            font-weight: 600;
+            border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .debug-content {
+            padding: 20px;
+            overflow-y: auto;
+            font-family: "JetBrains Mono", monospace;
+            font-size: 12px;
+        }
+
+        .debug-section h3 {
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: #7dd3fc;
+            margin-bottom: 8px;
+        }
+
+        .debug-item {
+            background: rgba(15, 23, 42, 0.8);
+            border: 1px solid rgba(148, 163, 184, 0.2);
+            padding: 10px;
+            border-radius: 8px;
+            margin-bottom: 8px;
+        }
+
+        .debug-item pre {
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 999px;
+            font-size: 11px;
+            font-weight: 600;
+            margin-right: 8px;
+            background: #1e293b;
+            color: #e2e8f0;
+        }
+
+        @media (max-width: 1024px) {
+            .app {
+                grid-template-columns: 1fr;
+            }
+
+            .sidebar {
+                flex-direction: row;
+                align-items: center;
+                justify-content: space-between;
+                border-right: none;
+                border-bottom: 1px solid var(--line);
+            }
+
+            .user-box {
+                margin-top: 0;
+            }
+        }
+    </style>
+</head>
+<body>
+<div class="app">
+    <aside class="sidebar">
+        <div class="brand">
+            <div class="brand-mark">R</div>
+            RemindMe
+        </div>
+        <nav class="nav">
+            <div class="nav-item active">AI Chat</div>
+            <div class="nav-item">Upcoming</div>
+            <div class="nav-item">Completed</div>
+        </nav>
+    </aside>
+
+    <main class="main">
+        <div class="topbar">
+            <h1>AI Chat</h1>
+            <div class="topbar-actions">
+                <input class="search" type="text" placeholder="Search..." disabled />
+                <button class="ghost" id="debug-toggle">Dev</button>
+            </div>
+        </div>
+
+        <section class="hero">
+            <div class="orb"></div>
+            <div class="hero-content">
+                <div class="hero-title">Welcome to RemindMe Mem0!</div>
+                <div class="hero-sub">Get started by telling me a reminder. I will handle the rest.</div>
+            </div>
+        </section>
+
+        <section class="chat-shell">
+            <div class="chat-messages" id="chat-messages">
+                <div class="message system">
+                    Welcome! I'm your agentic reminder assistant. I can help you create, update, and manage reminders using natural language.
+                </div>
+            </div>
+            <div class="composer">
+                <input
+                    type="text"
+                    id="message-input"
+                    placeholder="Ask me anything..."
+                    autocomplete="off"
+                />
+                <button class="send" id="send-button">Send</button>
+            </div>
+        </section>
+    </main>
+</div>
+
+<div class="toast-container" id="toast-container"></div>
+
+<div class="debug-panel" id="debug-panel">
+    <div class="debug-header">
+        <span>Debug Panel</span>
+        <button class="ghost" id="debug-close">Close</button>
+    </div>
+    <div class="debug-content" id="debug-content">
+        <div class="debug-section">
+            <h3>Waiting</h3>
+            <div class="debug-item">Send a message to see debug information...</div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const messageInput = document.getElementById('message-input');
+    const sendButton = document.getElementById('send-button');
+    const chatMessages = document.getElementById('chat-messages');
+    const debugContent = document.getElementById('debug-content');
+    const debugPanel = document.getElementById('debug-panel');
+    const debugToggle = document.getElementById('debug-toggle');
+    const debugClose = document.getElementById('debug-close');
+    const toastContainer = document.getElementById('toast-container');
+
+    let isProcessing = false;
+
+    function getUserId() {
+        return 'slack_only';
+    }
+
+    debugToggle.addEventListener('click', () => {
+        debugPanel.classList.add('open');
+    });
+
+    debugClose.addEventListener('click', () => {
+        debugPanel.classList.remove('open');
+    });
+
+    function addMessage(text, type) {
+        const messageDiv = document.createElement('div');
+        messageDiv.className = `message ${type}`;
+        messageDiv.textContent = text;
+        chatMessages.appendChild(messageDiv);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    function addFormattedListMessage(text) {
+        const sections = text.split('\n\n').map(section => section.trim()).filter(Boolean);
+        const wrapper = document.createElement('div');
+        wrapper.className = 'message assistant';
+        const card = document.createElement('div');
+        card.className = 'list-card';
+
+        sections.forEach(section => {
+            const lines = section.split('\n').map(line => line.trim()).filter(Boolean);
+            if (!lines.length) return;
+            const title = lines[0].replace(/:\s*$/, '');
+            const items = lines.slice(1).map(line => line.replace(/^•\s*/, ''));
+            const sectionDiv = document.createElement('div');
+            sectionDiv.className = 'list-section';
+            sectionDiv.innerHTML = `
+                <h4>${escapeHtml(title)}</h4>
+                <ul>
+                  ${items.map(item => `<li>${escapeHtml(item)}</li>`).join('')}
+                </ul>
+            `;
+            card.appendChild(sectionDiv);
+        });
+
+        wrapper.appendChild(card);
+        chatMessages.appendChild(wrapper);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+
+    function showToast(title, meta, actions = [], reminderId = null) {
+        const toast = document.createElement('div');
+        toast.className = 'toast';
+        if (reminderId) {
+            toast.dataset.reminderId = reminderId;
+        }
+
+        let actionsHTML = '';
+        if (actions.length > 0) {
+            actionsHTML = `<div class="toast-actions">${actions.map(a =>
+                `<button class="toast-button ${a.type}" data-action="${a.action}">${a.label}</button>`
+            ).join('')}</div>`;
+        }
+
+        toast.innerHTML = `
+            <div class="toast-title">${title}</div>
+            <div class="toast-meta">${meta}</div>
+            ${actionsHTML}
+        `;
+
+        if (actions.length > 0) {
+            toast.addEventListener('click', (event) => {
+                const target = event.target;
+                if (!target || !target.dataset.action) return;
+                const action = target.dataset.action;
+                toast.remove();
+                if (action === 'done') {
+                    sendReminderAction('/action/done', {
+                        reminder_id: reminderId,
+                        user_id: getUserId()
+                    });
+                } else if (action === 'snooze') {
+                    sendReminderAction('/action/snooze', {
+                        reminder_id: reminderId,
+                        snooze_str: '10 minutes',
+                        user_id: getUserId()
+                    });
+                }
+            });
+        }
+
+        toastContainer.appendChild(toast);
+        setTimeout(() => {
+            toast.style.opacity = '0';
+            setTimeout(() => toast.remove(), 300);
+        }, 8000);
+    }
+
+    async function sendMessage() {
+        const message = messageInput.value.trim();
+        if (!message || isProcessing) return;
+
+        isProcessing = true;
+        sendButton.disabled = true;
+        sendButton.textContent = '...';
+
+        addMessage(message, 'user');
+        messageInput.value = '';
+
+        try {
+            const formData = new FormData();
+            formData.append('message', message);
+            formData.append('user_id', getUserId());
+
+            const response = await fetch('/chat', {
+                method: 'POST',
+                body: formData
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                if (
+                    typeof data.response === 'string' &&
+                    (data.response.includes('Upcoming (') ||
+                     data.response.includes('Rescheduled (') ||
+                     data.response.includes('Completed ('))
+                ) {
+                    addFormattedListMessage(data.response);
+                } else {
+                    addMessage(data.response, 'assistant');
+                }
+                updateDebugPanel(data.debug, data.elapsed);
+            } else {
+                addMessage('Sorry, something went wrong. Please try again.', 'system');
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            addMessage('Error connecting to server. Please try again.', 'system');
+        } finally {
+            isProcessing = false;
+            sendButton.disabled = false;
+            sendButton.textContent = 'Send';
+        }
+    }
+
+    function updateDebugPanel(debug, elapsed) {
+        let html = '';
+
+        html += `<div class="debug-section">`;
+        html += `<h3>Performance</h3>`;
+        html += `<div class="debug-item">`;
+        html += `<span class="badge">TIME</span> ${elapsed.toFixed(2)}s`;
+        html += `</div></div>`;
+
+        if (debug.retrieved_memories) {
+            html += `<div class="debug-section">`;
+            html += `<h3>Retrieved Memories</h3>`;
+            html += `<div class="debug-item"><pre>${JSON.stringify(debug.retrieved_memories, null, 2)}</pre></div>`;
+            html += `</div>`;
+        }
+
+        if (debug.tool_calls && debug.tool_calls.length > 0) {
+            html += `<div class="debug-section">`;
+            html += `<h3>Tool Calls (${debug.tool_calls.length})</h3>`;
+            debug.tool_calls.forEach((tc) => {
+                html += `<div class="debug-item">`;
+                html += `<pre>${JSON.stringify(tc.input, null, 2)}</pre>`;
+                if (tc.result) {
+                    html += `<pre style="margin-top:8px;opacity:0.7">${JSON.stringify(tc.result, null, 2)}</pre>`;
+                }
+                html += `</div>`;
+            });
+            html += `</div>`;
+        }
+
+        debugContent.innerHTML = html || '<div class="debug-item">No debug data</div>';
+    }
+
+    async function sendReminderAction(path, payload) {
+        const formData = new FormData();
+        Object.entries(payload).forEach(([key, value]) => {
+            formData.append(key, value);
+        });
+        try {
+            await fetch(path, {
+                method: 'POST',
+                body: formData
+            });
+        } catch (error) {
+            console.error('Action error:', error);
+            addMessage('Network error while updating the reminder.', 'system');
+        }
+    }
+
+    sendButton.addEventListener('click', sendMessage);
+    messageInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') sendMessage();
+    });
+
+    messageInput.focus();
+</script>
+</body>
+</html>
