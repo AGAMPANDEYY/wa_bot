@@ -423,11 +423,11 @@ def run_in_background(target, *args, **kwargs):
     thread.start()
 
     def background_update_behavior(user_id: str):
-    try:
-        update_behavior_memory(user_id)
-        _invalidate_mem0_context_cache(user_id)
-    except Exception:
-        pass
+        try:
+            update_behavior_memory(user_id)
+            _invalidate_mem0_context_cache(user_id)
+        except Exception:
+            pass
 
 def background_upsert_active(reminder_id: int, user_id: str, text: str, metadata: Dict[str, Any]):
     try:
