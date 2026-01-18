@@ -40,6 +40,7 @@ SLACK_NOTIFY_INTERVAL_SECONDS = int(os.getenv("SLACK_NOTIFY_INTERVAL_SECONDS", "
 BACKGROUND_MEM0_WRITES = os.getenv("BACKGROUND_MEM0_WRITES", "1").lower() in ("1", "true", "yes", "on")
 DEBUG_SYSTEM_PROMPT = os.getenv("DEBUG_SYSTEM_PROMPT", "0").lower() in ("1", "true", "yes", "on")
 SYSTEM_PROMPT_LOG_PATH = os.getenv("SYSTEM_PROMPT_LOG_PATH", "")
+MEM0_CONTEXT_TTL_SECONDS = int(os.getenv("MEM0_CONTEXT_TTL_SECONDS", "120"))
 
 # Initialize
 app = FastAPI()
@@ -70,6 +71,42 @@ pending_actions = {}
 slack_event_cache = {}
 slack_user_channels = {}
 user_time_context = {}
+mem0_context_cache = {}
+
+def _get_cached_mem0_context(user_id: str) -> Optional[Dict[str, Any]]:
+    now = time.time()
+    if db:
+        try:
+            row = db.get_mem0_cache(user_id)
+            if row and row.get("updated_at"):
+                if (now - row["updated_at"]) <= MEM0_CONTEXT_TTL_SECONDS:
+                    payload = json.loads(row.get("payload") or "{}")
+                    return payload
+        except Exception:
+            pass
+    cached = mem0_context_cache.get(user_id)
+    if not cached:
+        return None
+    if (now - cached["ts"]) > MEM0_CONTEXT_TTL_SECONDS:
+        mem0_context_cache.pop(user_id, None)
+        return None
+    return cached["data"]
+
+def _set_cached_mem0_context(user_id: str, data: Dict[str, Any]):
+    mem0_context_cache[user_id] = {"ts": time.time(), "data": data}
+    if db:
+        try:
+            db.set_mem0_cache(user_id, json.dumps(data))
+        except Exception:
+            pass
+
+def _invalidate_mem0_context_cache(user_id: str):
+    mem0_context_cache.pop(user_id, None)
+    if db:
+        try:
+            db.set_mem0_cache(user_id, json.dumps({}))
+        except Exception:
+            pass
 
 def sanitize_slack_text(text: str) -> str:
     """Normalize Slack markup into plain text for NLP parsing."""
@@ -385,9 +422,10 @@ def run_in_background(target, *args, **kwargs):
     thread = threading.Thread(target=target, args=args, kwargs=kwargs, daemon=True)
     thread.start()
 
-def background_update_behavior(user_id: str):
+    def background_update_behavior(user_id: str):
     try:
         update_behavior_memory(user_id)
+        _invalidate_mem0_context_cache(user_id)
     except Exception:
         pass
 
@@ -396,6 +434,7 @@ def background_upsert_active(reminder_id: int, user_id: str, text: str, metadata
         mem0_id = mem0_store.upsert_active_reminder(text, user_id=user_id, metadata=metadata)
         if mem0_id:
             db.update_reminder_mem0_id(reminder_id, user_id, mem0_id)
+        _invalidate_mem0_context_cache(user_id)
     except Exception:
         pass
 
@@ -406,12 +445,14 @@ def background_upsert_archived(reminder_id: int, user_id: str, text: str, metada
         mem0_id = mem0_store.upsert_archived_reminder(text, user_id=user_id, metadata=metadata)
         if mem0_id:
             db.update_reminder_mem0_id(reminder_id, user_id, mem0_id)
+        _invalidate_mem0_context_cache(user_id)
     except Exception:
         pass
 
 def background_upsert_preference(user_id: str, text: str, metadata: Dict[str, Any]):
     try:
         mem0_store.upsert_preference(text, user_id=user_id, metadata=metadata)
+        _invalidate_mem0_context_cache(user_id)
     except Exception:
         pass
 
@@ -636,6 +677,7 @@ def execute_create_reminder(
         )
         if mem0_id:
             db.update_reminder_mem0_id(reminder_id, user_id, mem0_id)
+        _invalidate_mem0_context_cache(user_id)
 
     debug_context["db_changes"].append({
         "action": "create_reminder",
@@ -715,6 +757,7 @@ def execute_update_reminder(user_id: str, reminder_id: int, title: str = None, d
         )
         if mem0_id:
             db.update_reminder_mem0_id(reminder_id, user_id, mem0_id)
+        _invalidate_mem0_context_cache(user_id)
 
     debug_context["db_changes"].append({
         "action": "update_reminder",
@@ -773,6 +816,7 @@ def execute_mark_done(user_id: str, reminder_id: int) -> Dict[str, Any]:
         )
         if mem0_id:
             db.update_reminder_mem0_id(reminder_id, user_id, mem0_id)
+        _invalidate_mem0_context_cache(user_id)
 
     debug_context["db_changes"].append({
         "action": "mark_done",
@@ -961,6 +1005,7 @@ def execute_set_preference(user_id: str, key: str, value: str) -> Dict[str, Any]
             mem0_text,
             metadata={"pref_key": key, "pref_value": value}
         )
+        _invalidate_mem0_context_cache(user_id)
     
     debug_context["db_changes"].append({
         "action": "set_preference",
@@ -1072,7 +1117,7 @@ def execute_tool(tool_name: str, tool_input: Dict[str, Any], user_id: str) -> Di
 def should_skip_mem0_prefetch(user_message: str) -> bool:
     text = user_message.lower()
     if any(word in text for word in ["list", "show", "search", "find", "what reminders", "all reminders"]):
-        return False
+        return True
     return any(
         word in text
         for word in [
@@ -1157,18 +1202,12 @@ def get_mem0_context(user_message: str, user_id: str = "default_user", skip_mem0
         debug_context["retrieved_memories"] = mem0_context
         return mem0_context
 
-    # Get ALL active reminders (don't filter by query yet)
-    active_memories = mem0_store.get_all_memories(
-        user_id=user_id,
-        categories=[mem0_store.CAT_REMINDER_ACTIVE]
-    )
+    cached = _get_cached_mem0_context(user_id)
+    if cached:
+        debug_context["retrieved_memories"] = cached
+        return cached
 
-    debug_context["mem0_queries"].append({
-        "query": "all_active_reminders",
-        "category": "reminder_active",
-        "results_count": len(active_memories)
-    })
-
+    # Personalization only: preferences, behavior, and conversation hints.
     behavior_memories = mem0_store.search_behavior("behavior_summary", user_id, limit=3)
     debug_context["mem0_queries"].append({
         "query": "behavior_summary",
@@ -1176,33 +1215,22 @@ def get_mem0_context(user_message: str, user_id: str = "default_user", skip_mem0
         "results_count": len(behavior_memories)
     })
 
-    # Only search preferences if message mentions settings/preferences
-    pref_memories = []
-    if any(word in user_message.lower() for word in ['timezone', 'setting', 'preference', 'default']):
-        pref_memories = mem0_store.search_preferences(user_message, user_id, limit=5)
-        debug_context["mem0_queries"].append({
-            "query": user_message,
-            "category": "user_prefs",
-            "results_count": len(pref_memories)
-        })
-
-    rescheduled_memories = []
-    if any(word in user_message.lower() for word in ["reschedule", "rescheduled", "snooze", "postpone", "delayed"]):
-        rescheduled_memories = mem0_store.get_rescheduled_active_reminders(user_id=user_id, limit=20)
-        debug_context["mem0_queries"].append({
-            "query": "rescheduled_active_reminders",
-            "category": "reminder_active",
-            "results_count": len(rescheduled_memories)
-        })
+    pref_memories = mem0_store.search_preferences(user_message, user_id, limit=5)
+    debug_context["mem0_queries"].append({
+        "query": user_message,
+        "category": "user_prefs",
+        "results_count": len(pref_memories)
+    })
 
     mem0_context = {
-        "active_reminders": active_memories,
-        "rescheduled_active_reminders": rescheduled_memories,
+        "active_reminders": [],
+        "rescheduled_active_reminders": [],
         "preferences": pref_memories,
         "behavior": behavior_memories,
         "conversation_history": []
     }
     debug_context["retrieved_memories"] = mem0_context
+    _set_cached_mem0_context(user_id, mem0_context)
     return mem0_context
 
 async def run_agentic_loop(user_message: str, user_id: str = "default_user") -> str:

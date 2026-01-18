@@ -105,12 +105,23 @@ class SQLiteDatabase:
             """
         )
 
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS mem0_cache (
+                user_id TEXT PRIMARY KEY,
+                payload TEXT NOT NULL,
+                updated_at INTEGER DEFAULT (strftime('%s', 'now'))
+            )
+            """
+        )
+
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_reminders_user ON reminders(user_id)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_reminders_status ON reminders(status)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_reminders_due ON reminders(due_at_epoch)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON audit_logs(timestamp)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_convo_user ON conversation_messages(user_id)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_convo_created ON conversation_messages(created_at)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_mem0_cache_updated ON mem0_cache(updated_at)")
 
         # Migrate legacy tables
         cursor.execute("PRAGMA table_info(reminders)")
@@ -171,6 +182,15 @@ class SQLiteDatabase:
             cursor.execute("ALTER TABLE behavior_stats ADD COLUMN complete_minutes_total INTEGER DEFAULT 0")
         if "last_event_at" not in behavior_cols:
             cursor.execute("ALTER TABLE behavior_stats ADD COLUMN last_event_at INTEGER")
+
+        cursor.execute("PRAGMA table_info(mem0_cache)")
+        mem0_cols = [row[1] for row in cursor.fetchall()]
+        if "user_id" not in mem0_cols:
+            cursor.execute("ALTER TABLE mem0_cache ADD COLUMN user_id TEXT")
+        if "payload" not in mem0_cols:
+            cursor.execute("ALTER TABLE mem0_cache ADD COLUMN payload TEXT")
+        if "updated_at" not in mem0_cols:
+            cursor.execute("ALTER TABLE mem0_cache ADD COLUMN updated_at INTEGER")
 
         conn.commit()
         conn.close()
@@ -647,6 +667,41 @@ class SQLiteDatabase:
             "avg_complete_minutes": avg_complete,
         }
 
+    # === MEM0 CACHE ===
+
+    def get_mem0_cache(self, user_id: str) -> Optional[Dict[str, Any]]:
+        conn = self.get_conn()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT payload, updated_at
+            FROM mem0_cache
+            WHERE user_id = ?
+            """,
+            (user_id,),
+        )
+        row = cursor.fetchone()
+        conn.close()
+        if not row:
+            return None
+        return {"payload": row[0], "updated_at": row[1]}
+
+    def set_mem0_cache(self, user_id: str, payload: str):
+        conn = self.get_conn()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            INSERT INTO mem0_cache (user_id, payload, updated_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET
+                payload = excluded.payload,
+                updated_at = excluded.updated_at
+            """,
+            (user_id, payload, _now_epoch()),
+        )
+        conn.commit()
+        conn.close()
+
 
 class SupabaseDatabase:
     """Supabase-backed database for production and multi-instance use."""
@@ -1044,6 +1099,22 @@ class SupabaseDatabase:
             "avg_snooze_minutes": avg_snooze,
             "avg_complete_minutes": avg_complete,
         }
+
+    # === MEM0 CACHE ===
+
+    def get_mem0_cache(self, user_id: str) -> Optional[Dict[str, Any]]:
+        row = self._select_one("mem0_cache", {"user_id": user_id})
+        if not row:
+            return None
+        return {"payload": row.get("payload"), "updated_at": row.get("updated_at")}
+
+    def set_mem0_cache(self, user_id: str, payload: str):
+        data = {
+            "user_id": user_id,
+            "payload": payload,
+            "updated_at": _now_epoch(),
+        }
+        self.client.table("mem0_cache").upsert(data, on_conflict="user_id").execute()
 
 
 class Database:

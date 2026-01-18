@@ -50,9 +50,16 @@ create table if not exists public.behavior_stats (
   last_event_at bigint default extract(epoch from now())
 );
 
+create table if not exists public.mem0_cache (
+  user_id text primary key,
+  payload text not null,
+  updated_at bigint default extract(epoch from now())
+);
+
 create index if not exists idx_reminders_user on public.reminders (user_id);
 create index if not exists idx_reminders_status on public.reminders (status);
 create index if not exists idx_reminders_due on public.reminders (due_at_epoch);
 create index if not exists idx_audit_timestamp on public.audit_logs (timestamp);
 create index if not exists idx_convo_user on public.conversation_messages (user_id);
 create index if not exists idx_convo_created on public.conversation_messages (created_at);
+create index if not exists idx_mem0_cache_updated on public.mem0_cache (updated_at);
