@@ -667,6 +667,26 @@ class SQLiteDatabase:
             "avg_complete_minutes": avg_complete,
         }
 
+    # === ARCHIVE OVERDUE ===
+
+    def archive_overdue_reminders(self, now_epoch: int) -> int:
+        conn = self.get_conn()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            UPDATE reminders
+            SET status = 'completed',
+                updated_at = ?
+            WHERE status = 'active'
+              AND due_at_epoch < ?
+            """,
+            (now_epoch, now_epoch),
+        )
+        updated = cursor.rowcount
+        conn.commit()
+        conn.close()
+        return updated
+
     # === MEM0 CACHE ===
 
     def get_mem0_cache(self, user_id: str) -> Optional[Dict[str, Any]]:
@@ -1099,6 +1119,19 @@ class SupabaseDatabase:
             "avg_snooze_minutes": avg_snooze,
             "avg_complete_minutes": avg_complete,
         }
+
+    # === ARCHIVE OVERDUE ===
+
+    def archive_overdue_reminders(self, now_epoch: int) -> int:
+        response = (
+            self.client.table("reminders")
+            .update({"status": "completed", "updated_at": now_epoch})
+            .eq("status", "active")
+            .lt("due_at_epoch", now_epoch)
+            .execute()
+        )
+        data = self._response_data(response) or []
+        return len(data)
 
     # === MEM0 CACHE ===
 

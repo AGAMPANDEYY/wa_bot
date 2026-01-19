@@ -41,6 +41,7 @@ BACKGROUND_MEM0_WRITES = os.getenv("BACKGROUND_MEM0_WRITES", "1").lower() in ("1
 DEBUG_SYSTEM_PROMPT = os.getenv("DEBUG_SYSTEM_PROMPT", "0").lower() in ("1", "true", "yes", "on")
 SYSTEM_PROMPT_LOG_PATH = os.getenv("SYSTEM_PROMPT_LOG_PATH", "")
 MEM0_CONTEXT_TTL_SECONDS = int(os.getenv("MEM0_CONTEXT_TTL_SECONDS", "120"))
+ARCHIVE_CRON_TOKEN = os.getenv("ARCHIVE_CRON_TOKEN", "")
 
 # Initialize
 app = FastAPI()
@@ -1775,6 +1776,21 @@ async def notifications(user_id: str = "default_user"):
         db.mark_reminder_notified(reminder_id, user_id, now_epoch)
 
     return JSONResponse({"success": True, "notifications": items})
+
+
+@app.post("/cron/archive_overdue")
+async def archive_overdue(request: Request):
+    token = request.headers.get("x-cron-token", "")
+    if ARCHIVE_CRON_TOKEN and token != ARCHIVE_CRON_TOKEN:
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+    if not db:
+        return JSONResponse({"error": "db_unavailable"}, status_code=503)
+    now_epoch = int(time.time())
+    try:
+        updated = db.archive_overdue_reminders(now_epoch)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+    return {"success": True, "archived": updated}
 
 @app.get("/memories")
 async def memories(user_id: str = "default_user"):

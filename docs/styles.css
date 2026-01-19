@@ -1,0 +1,270 @@
+:root {
+  --bg: #f5f0e6;
+  --ink: #1a1a1a;
+  --muted: #4a4a4a;
+  --accent: #e66a2c;
+  --accent-dark: #b64a12;
+  --card: #fff9ef;
+  --stroke: #e7dccb;
+  --shadow: rgba(28, 20, 10, 0.12);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "Space Grotesk", "Segoe UI", sans-serif;
+  color: var(--ink);
+  background: radial-gradient(1200px 900px at 10% -10%, #ffe9cc 0%, transparent 55%),
+    radial-gradient(1000px 900px at 90% -20%, #ffd8b6 0%, transparent 50%),
+    var(--bg);
+}
+
+.page {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 56px 24px 80px;
+}
+
+.hero {
+  padding: 48px 48px 56px;
+  background: linear-gradient(135deg, #fff3e4 0%, #fffdf7 45%, #ffecd7 100%);
+  border: 1px solid var(--stroke);
+  border-radius: 28px;
+  box-shadow: 0 20px 50px var(--shadow);
+  animation: rise 0.9s ease-out both;
+}
+
+.hero__brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-size: 0.8rem;
+}
+
+.brand-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 6px rgba(230, 106, 44, 0.15);
+}
+
+.brand-name {
+  color: var(--accent-dark);
+}
+
+h1 {
+  font-family: "Fraunces", "Times New Roman", serif;
+  font-size: clamp(2.2rem, 4vw, 3.4rem);
+  margin: 20px 0 16px;
+  line-height: 1.1;
+}
+
+.hero__lede {
+  font-size: 1.1rem;
+  max-width: 700px;
+  color: var(--muted);
+}
+
+.hero__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.hero__meta span {
+  border: 1px solid var(--stroke);
+  padding: 8px 14px;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  background: #fff;
+}
+
+main {
+  margin-top: 48px;
+  display: grid;
+  gap: 48px;
+}
+
+.toc {
+  padding: 28px;
+  border: 1px solid var(--stroke);
+  border-radius: 22px;
+  background: #fff;
+  animation: fade 0.8s ease-out 0.15s both;
+}
+
+.toc__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.toc__grid a {
+  padding: 12px 16px;
+  border-radius: 14px;
+  text-decoration: none;
+  color: var(--ink);
+  border: 1px dashed var(--stroke);
+  background: #fffaf1;
+  transition: transform 0.2s ease, border-color 0.2s ease;
+}
+
+.toc__grid a:hover {
+  transform: translateY(-2px);
+  border-color: var(--accent);
+}
+
+.section {
+  padding: 32px 36px;
+  border-radius: 22px;
+  background: #fff;
+  border: 1px solid var(--stroke);
+  animation: fade 0.8s ease-out 0.2s both;
+}
+
+.section h2 {
+  font-family: "Fraunces", "Times New Roman", serif;
+  font-size: 2rem;
+  margin-top: 0;
+}
+
+.section p {
+  color: var(--muted);
+  line-height: 1.7;
+}
+
+.cards {
+  display: grid;
+  gap: 20px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  margin-top: 20px;
+}
+
+.card {
+  padding: 18px 18px 20px;
+  border-radius: 16px;
+  background: var(--card);
+  border: 1px solid var(--stroke);
+  box-shadow: 0 12px 24px rgba(28, 20, 10, 0.08);
+}
+
+.card h3 {
+  margin-top: 0;
+  font-size: 1.1rem;
+}
+
+.steps {
+  list-style: none;
+  padding: 0;
+  margin: 20px 0 0;
+  display: grid;
+  gap: 18px;
+}
+
+.steps li {
+  padding: 18px 20px;
+  border-radius: 18px;
+  border: 1px solid var(--stroke);
+  background: #fffaf2;
+}
+
+.steps h3 {
+  margin-top: 0;
+}
+
+.grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  margin-top: 20px;
+}
+
+.pill {
+  padding: 16px;
+  border-radius: 16px;
+  border: 1px solid var(--stroke);
+  background: #fffaf1;
+}
+
+.pill h3 {
+  margin-top: 0;
+}
+
+.callout {
+  margin-top: 20px;
+  padding: 20px;
+  border-radius: 18px;
+  background: #1f1b16;
+  color: #fff7ed;
+}
+
+.callout h3 {
+  margin-top: 0;
+  color: #ffd6b0;
+}
+
+pre {
+  margin: 12px 0;
+  background: #14110e;
+  padding: 16px;
+  border-radius: 12px;
+  overflow-x: auto;
+}
+
+code,
+.code {
+  font-family: "SFMono-Regular", "Menlo", "Monaco", "Courier New", monospace;
+  font-size: 0.95em;
+}
+
+.footer {
+  margin-top: 48px;
+  padding: 20px 6px;
+  color: var(--muted);
+  text-align: center;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fade {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 720px) {
+  .hero {
+    padding: 32px 24px 40px;
+  }
+
+  .section {
+    padding: 24px;
+  }
+
+  h1 {
+    font-size: 2rem;
+  }
+}
