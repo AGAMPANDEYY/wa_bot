@@ -69,11 +69,15 @@ class Mem0Store:
         user_id = kwargs.get("user_id")
         if user_id:
             kwargs.setdefault("filters", {"AND": [{"user_id": user_id}]})
+        kwargs.setdefault("version", "v2")
         try:
             results = self.client.search(**kwargs)
         except TypeError:
+            # Older SDKs may not support filters/version.
             kwargs.pop("filters", None)
+            kwargs.pop("version", None)
             results = self.client.search(**kwargs)
+
         if isinstance(results, str):
             try:
                 results = json.loads(results)
@@ -83,11 +87,25 @@ class Mem0Store:
                 return []
         if isinstance(results, dict):
             if results.get("error"):
-                if self.debug:
-                    print("Mem0 search error:", results)
-                return []
+                # Retry with filters-only in case SDK dropped them.
+                if user_id and "Filters are required" in str(results.get("error")):
+                    retry_kwargs = dict(kwargs)
+                    retry_kwargs.pop("user_id", None)
+                    retry_kwargs["filters"] = {"AND": [{"user_id": user_id}]}
+                    try:
+                        results = self.client.search(**retry_kwargs)
+                    except Exception:
+                        if self.debug:
+                            print("Mem0 search error:", results)
+                        return []
+                else:
+                    if self.debug:
+                        print("Mem0 search error:", results)
+                    return []
             if isinstance(results.get("memories"), list):
                 return results["memories"]
+            if isinstance(results.get("data"), list):
+                return results["data"]
         if not isinstance(results, list):
             return []
         return results
@@ -539,6 +557,19 @@ class Mem0Store:
                     except Exception:
                         if self.debug:
                             print("Mem0 get all returned non-JSON string:", results)
+                        return []
+                if isinstance(results, dict):
+                    if results.get("error"):
+                        if self.debug:
+                            print("Mem0 get all error:", results)
+                        return []
+                    if isinstance(results.get("memories"), list):
+                        results = results["memories"]
+                    elif isinstance(results.get("data"), list):
+                        results = results["data"]
+                    else:
+                        if self.debug:
+                            print("Mem0 get all returned unexpected dict:", results)
                         return []
                 if not isinstance(results, list):
                     if self.debug:
