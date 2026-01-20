@@ -567,13 +567,46 @@ def find_existing_active_reminder(user_id: str, title: str):
     matches.sort(key=lambda r: _reminder_value(r, "updated_at", 8) or 0, reverse=True)
     return matches[0]
 
-def get_common_times_by_category(user_id: str) -> Dict[str, str]:
-    if not db:
+def _mem0_time_key_to_category(key: str) -> Optional[str]:
+    if not key:
+        return None
+    normalized = key.strip().lower()
+    if normalized in {"default_time", "default_reminder_time", "reminder_time"}:
+        return "default"
+    for prefix in ("reminder_time:", "reminder_time_", "default_time:"):
+        if normalized.startswith(prefix):
+            return normalized.replace(prefix, "").strip() or None
+    return None
+
+def get_mem0_time_preferences(user_id: str) -> Dict[str, str]:
+    """Read time preferences from Mem0 user_prefs."""
+    try:
+        memories = mem0_store.get_all_memories(
+            user_id=user_id,
+            categories=[mem0_store.CAT_USER_PREFS]
+        )
+    except Exception:
         return {}
+    prefs: Dict[str, str] = {}
+    for mem in memories:
+        metadata = mem.get("metadata", {}) or {}
+        key = metadata.get("pref_key")
+        value = metadata.get("pref_value")
+        if not key or not value:
+            continue
+        category = _mem0_time_key_to_category(key)
+        if category:
+            prefs[category] = str(value).strip()
+    return prefs
+
+def get_common_times_by_category(user_id: str) -> Dict[str, str]:
+    mem0_times = get_mem0_time_preferences(user_id)
+    if not db:
+        return mem0_times
     try:
         rows = db.list_reminder_times_by_category(user_id)
     except Exception:
-        return {}
+        return mem0_times
     buckets = {}
     for row in rows:
         category = row["category"] if isinstance(row, dict) else row[0]
@@ -584,8 +617,10 @@ def get_common_times_by_category(user_id: str) -> Dict[str, str]:
         key = f"{dt.hour:02d}:{dt.minute:02d}"
         buckets.setdefault(category, {})
         buckets[category][key] = buckets[category].get(key, 0) + 1
-    common = {}
+    common = dict(mem0_times)
     for category, times in buckets.items():
+        if category in common:
+            continue
         common_time = max(times.items(), key=lambda item: item[1])[0]
         common[category] = common_time
     return common
