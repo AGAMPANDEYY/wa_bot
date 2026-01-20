@@ -17,262 +17,220 @@
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
-    <div class="page">
-      <header class="hero">
+    <main class="page">
+      <header>
         <div class="hero__brand">
           <span class="brand-dot"></span>
           <span class="brand-name">MeowMemo</span>
         </div>
-        <h1>Memory-First Slack Reminders, Built Like a System</h1>
+        <h1>Building a Reminder Agent That Actually Remembers with Mem0</h1>
         <p class="hero__lede">
-          This is the technical, but human, build guide for a Slack reminder agent
-          that learns. It blends Mem0 long-term memory with a clean system of record,
-          so the bot is personal without being sloppy.
+          How we designed a Slack assistant with clean state, long-term memory, and zero hallucinations
         </p>
-        <div class="hero__meta">
-          <span>FastAPI + Slack Events</span>
-          <span>Mem0 memory model</span>
-          <span>SQLite/Supabase ground truth</span>
-          <span>Render-ready ops</span>
-        </div>
+        <p>
+          Most “AI reminder bots” work exactly once.
+        </p>
+        <p>
+          You ask them to remind you about something, they schedule a job, send a notification, and then forget the interaction ever happened. They don’t learn how you phrase reminders. They don’t adapt to how you snooze. They don’t understand that a reminder marked “done” should stop influencing future behavior—but still remain part of your history.
+        </p>
+        <p>
+          That’s fine if you’re building alarms. It falls apart if you’re building an assistant.
+        </p>
+        <p>
+          At Mem0, we wanted to explore what a real reminder agent looks like when memory is treated as a first-class system component, not an afterthought bolted onto a prompt. The result is MeowMemo, a Slack-native reminder agent that combines a traditional system-of-record database with Mem0’s long-term memory to deliver personalization without sacrificing correctness.
+        </p>
+        <p>
+          This post is both a product story and a technical guide. By the end, you should understand not just what we built, but how to build it yourself—and why certain design decisions are non-negotiable when memory enters the picture.
+        </p>
+        <p class="meta-line">
+          FastAPI + Slack Events · Mem0 memory model · SQLite/Supabase ground truth · Render-ready ops
+        </p>
       </header>
 
-      <main>
-        <section class="toc">
-          <h2>Quick map</h2>
-          <div class="toc__grid">
-            <a href="#why-memory">Why memory-first matters</a>
-            <a href="#architecture">System architecture</a>
-            <a href="#step-by-step">Step-by-step build</a>
-            <a href="#mem0">Mem0 model and categories</a>
-            <a href="#niche">Niche problems we solved</a>
-            <a href="#ops">Scheduling and ops</a>
-          </div>
-        </section>
+      <section class="toc">
+        <h2>Quick map</h2>
+        <p>
+          <a href="#why-memory">Why memory-first matters</a> ·
+          <a href="#architecture">System architecture</a> ·
+          <a href="#step-by-step">Step-by-step build</a> ·
+          <a href="#mem0">Mem0 model and categories</a> ·
+          <a href="#niche">Niche problems we solved</a> ·
+          <a href="#ops">Scheduling and ops</a>
+        </p>
+      </section>
 
-        <section id="why-memory" class="section">
-          <h2>Why memory-first matters</h2>
-          <p>
-            Reminders are high-trust. If a bot forgets a meeting time or repeats
-            notifications, users leave. We split responsibilities: the database is the
-            source of truth for reminders, while Mem0 stores long-term preference and
-            behavior cues. This gives us personalization without hallucinated facts,
-            and predictable state transitions that engineers can audit.
-          </p>
-          <p>
-            In this repo, that split is explicit. Reminder status always comes from
-            the DB via <span class="code">Database</span>, while Mem0 supplies
-            preferences, behavior summaries, and optional conversation snippets.
-          </p>
-        </section>
+      <section id="why-memory" class="section">
+        <h2>Why memory-first matters</h2>
+        <p>
+          Reminders are high-trust. If a bot forgets a meeting time or repeats
+          notifications, users leave. We split responsibilities: the database is the
+          source of truth for reminders, while Mem0 stores long-term preference and
+          behavior cues. This gives us personalization without hallucinated facts,
+          and predictable state transitions that engineers can audit.
+        </p>
+        <p>
+          In this repo, that split is explicit. Reminder status always comes from
+          the DB via <span class="code">Database</span>, while Mem0 supplies
+          preferences, behavior summaries, and optional conversation snippets.
+        </p>
+      </section>
 
-        <section id="architecture" class="section">
-          <h2>System architecture</h2>
-          <div class="cards">
-            <article class="card">
-              <h3>Ingress</h3>
-              <p>
-                Slack requests hit <span class="code">/slack/events</span>,
-                <span class="code">/slack/commands</span>, and
-                <span class="code">/slack/interactions</span> in
-                <span class="code">agent-backend/main.py</span>. Requests are verified
-                with Slack signatures and deduplicated to protect against retries.
-              </p>
-            </article>
-            <article class="card">
-              <h3>Decision + Tools</h3>
-              <p>
-                Claude decides which tool to call. Tool execution is deterministic
-                Python: create, update, snooze, list, mark-done. The system prompt
-                explicitly declares the DB as ground truth.
-              </p>
-            </article>
-            <article class="card">
-              <h3>Memory + State</h3>
-              <p>
-                The DB stores reminder state. Mem0 stores memory categories for
-                personalization: active/archived reminders, user prefs, behavior
-                summaries, and selective conversation context.
-              </p>
-            </article>
-            <article class="card">
-              <h3>Notifications</h3>
-              <p>
-                A background loop checks due reminders and sends Slack messages with
-                action buttons. Archival of overdue items is exposed via a cron
-                endpoint for reliable scheduling.
-              </p>
-            </article>
-          </div>
-        </section>
+      <section id="architecture" class="section">
+        <h2>System architecture</h2>
+        <h3>Ingress</h3>
+        <p>
+          Slack requests hit <span class="code">/slack/events</span>,
+          <span class="code">/slack/commands</span>, and
+          <span class="code">/slack/interactions</span> in
+          <span class="code">agent-backend/main.py</span>. Requests are verified
+          with Slack signatures and deduplicated to protect against retries.
+        </p>
+        <h3>Decision + Tools</h3>
+        <p>
+          Claude decides which tool to call. Tool execution is deterministic
+          Python: create, update, snooze, list, mark-done. The system prompt
+          explicitly declares the DB as ground truth.
+        </p>
+        <h3>Memory + State</h3>
+        <p>
+          The DB stores reminder state. Mem0 stores memory categories for
+          personalization: active/archived reminders, user prefs, behavior
+          summaries, and selective conversation context.
+        </p>
+        <h3>Notifications</h3>
+        <p>
+          A background loop checks due reminders and sends Slack messages with
+          action buttons. Archival of overdue items is exposed via a cron
+          endpoint for reliable scheduling.
+        </p>
+      </section>
 
-        <section id="step-by-step" class="section">
-          <h2>Step-by-step build (from this repo)</h2>
-          <ol class="steps">
-            <li>
-              <h3>1) Define your state model</h3>
-              <p>
-                Start with a real database schema. In this repo, reminders, preferences,
-                audit logs, conversations, and behavior stats are represented in
-                <span class="code">agent-backend/db.py</span> and
-                <span class="code">agent-backend/supabase_schema.sql</span>. This is
-                the system of record that can be queried and audited.
-              </p>
-            </li>
-            <li>
-              <h3>2) Establish the memory contract</h3>
-              <p>
-                Mem0 is not the source of truth. We store preferences and behavior
-                summaries to personalize decisions. Active and archived reminders are
-                mirrored into Mem0 for recall, but always reconciled against the DB.
-                See <span class="code">agent-backend/mem0_store.py</span>.
-              </p>
-            </li>
-            <li>
-              <h3>3) Build the agent loop</h3>
-              <p>
-                The main loop is in <span class="code">run_agentic_loop</span> inside
-                <span class="code">agent-backend/main.py</span>. It resolves pending
-                actions, fetches memory context, builds a system prompt, calls Claude
-                tools, and writes results to the DB and Mem0.
-              </p>
-            </li>
-            <li>
-              <h3>4) Handle time ambiguity</h3>
-              <p>
-                When users omit a time, we use <span class="code">infer_category</span>
-                and historical category times to suggest a default. This keeps the bot
-                helpful while avoiding silent guesses.
-              </p>
-            </li>
-            <li>
-              <h3>5) Make tool calls deterministic</h3>
-              <p>
-                Tools in <span class="code">TOOLS</span> map to execution functions
-                like <span class="code">execute_create_reminder</span> and
-                <span class="code">execute_update_reminder</span>. These always update
-                the DB and then sync Mem0.
-              </p>
-            </li>
-            <li>
-              <h3>6) Add notifications + actions</h3>
-              <p>
-                The app sends Slack DMs for due reminders and adds buttons for Done or
-                Snooze. This creates a quick action loop and updates behavior stats.
-              </p>
-            </li>
-            <li>
-              <h3>7) Ship scheduling as infrastructure</h3>
-              <p>
-                Archiving overdue reminders is exposed as
-                <span class="code">POST /cron/archive_overdue</span>. On Render or
-                similar platforms, schedule this via a Cron Job so it runs even if the
-                web service sleeps.
-              </p>
-            </li>
-          </ol>
-        </section>
+      <section id="step-by-step" class="section">
+        <h2>Step-by-step build (from this repo)</h2>
+        <h3>1) Define your state model</h3>
+        <p>
+          Start with a real database schema. In this repo, reminders, preferences,
+          audit logs, conversations, and behavior stats are represented in
+          <span class="code">agent-backend/db.py</span> and
+          <span class="code">agent-backend/supabase_schema.sql</span>. This is
+          the system of record that can be queried and audited.
+        </p>
+        <h3>2) Establish the memory contract</h3>
+        <p>
+          Mem0 is not the source of truth. We store preferences and behavior
+          summaries to personalize decisions. Active and archived reminders are
+          mirrored into Mem0 for recall, but always reconciled against the DB.
+          See <span class="code">agent-backend/mem0_store.py</span>.
+        </p>
+        <h3>3) Build the agent loop</h3>
+        <p>
+          The main loop is in <span class="code">run_agentic_loop</span> inside
+          <span class="code">agent-backend/main.py</span>. It resolves pending
+          actions, fetches memory context, builds a system prompt, calls Claude
+          tools, and writes results to the DB and Mem0.
+        </p>
+        <h3>4) Handle time ambiguity</h3>
+        <p>
+          When users omit a time, we use <span class="code">infer_category</span>
+          and historical category times to suggest a default. This keeps the bot
+          helpful while avoiding silent guesses.
+        </p>
+        <h3>5) Make tool calls deterministic</h3>
+        <p>
+          Tools in <span class="code">TOOLS</span> map to execution functions
+          like <span class="code">execute_create_reminder</span> and
+          <span class="code">execute_update_reminder</span>. These always update
+          the DB and then sync Mem0.
+        </p>
+        <h3>6) Add notifications + actions</h3>
+        <p>
+          The app sends Slack DMs for due reminders and adds buttons for Done or
+          Snooze. This creates a quick action loop and updates behavior stats.
+        </p>
+        <h3>7) Ship scheduling as infrastructure</h3>
+        <p>
+          Archiving overdue reminders is exposed as
+          <span class="code">POST /cron/archive_overdue</span>. On Render or
+          similar platforms, schedule this via a Cron Job so it runs even if the
+          web service sleeps.
+        </p>
+      </section>
 
-        <section id="mem0" class="section">
-          <h2>Mem0 model and categories</h2>
-          <p>
-            Mem0 categories are used to emulate metadata filtering and keep memory
-            retrieval precise. Each memory stores a category label in metadata and
-            also uses Mem0 categories for search. This keeps the model focused and
-            prevents memory sprawl.
-          </p>
-          <div class="grid">
-            <div class="pill">
-              <h3>reminder_active</h3>
-              <p>Active reminders mirrored with metadata like due time and category.</p>
-            </div>
-            <div class="pill">
-              <h3>reminder_archived</h3>
-              <p>Completed reminders, kept for historical reference.</p>
-            </div>
-            <div class="pill">
-              <h3>user_prefs</h3>
-              <p>Timezone, preferred times, and other stable preferences.</p>
-            </div>
-            <div class="pill">
-              <h3>user_behavior</h3>
-              <p>Aggregated stats like snooze and completion averages.</p>
-            </div>
-            <div class="pill">
-              <h3>conversation</h3>
-              <p>Selective context to keep the agent coherent across sessions.</p>
-            </div>
-          </div>
-        </section>
+      <section id="mem0" class="section">
+        <h2>Mem0 model and categories</h2>
+        <p>
+          Mem0 categories are used to emulate metadata filtering and keep memory
+          retrieval precise. Each memory stores a category label in metadata and
+          also uses Mem0 categories for search. This keeps the model focused and
+          prevents memory sprawl.
+        </p>
+        <h3>reminder_active</h3>
+        <p>Active reminders mirrored with metadata like due time and category.</p>
+        <h3>reminder_archived</h3>
+        <p>Completed reminders, kept for historical reference.</p>
+        <h3>user_prefs</h3>
+        <p>Timezone, preferred times, and other stable preferences.</p>
+        <h3>user_behavior</h3>
+        <p>Aggregated stats like snooze and completion averages.</p>
+        <h3>conversation</h3>
+        <p>Selective context to keep the agent coherent across sessions.</p>
+      </section>
 
-        <section id="niche" class="section">
-          <h2>Niche problems we solved</h2>
-          <div class="cards">
-            <article class="card">
-              <h3>Slack retries and dupes</h3>
-              <p>
-                Slack can send the same event multiple times. We cache event IDs and
-                ignore duplicates to avoid double reminders and double DB writes.
-              </p>
-            </article>
-            <article class="card">
-              <h3>Ambiguous user intent</h3>
-              <p>
-                If a user omits the time, we ask. If multiple reminders match, we
-                ask. The bot never silently guesses when trust is at stake.
-              </p>
-            </article>
-            <article class="card">
-              <h3>Memory drift</h3>
-              <p>
-                When a reminder is completed, the active memory is deleted and moved
-                to archived. This avoids stale memory conflicting with DB truth.
-              </p>
-            </article>
-            <article class="card">
-              <h3>Latency vs personalization</h3>
-              <p>
-                Mem0 writes can be async in background threads. This keeps user
-                responses fast while still updating long-term memory.
-              </p>
-            </article>
-          </div>
-        </section>
+      <section id="niche" class="section">
+        <h2>Niche problems we solved</h2>
+        <h3>Slack retries and dupes</h3>
+        <p>
+          Slack can send the same event multiple times. We cache event IDs and
+          ignore duplicates to avoid double reminders and double DB writes.
+        </p>
+        <h3>Ambiguous user intent</h3>
+        <p>
+          If a user omits the time, we ask. If multiple reminders match, we
+          ask. The bot never silently guesses when trust is at stake.
+        </p>
+        <h3>Memory drift</h3>
+        <p>
+          When a reminder is completed, the active memory is deleted and moved
+          to archived. This avoids stale memory conflicting with DB truth.
+        </p>
+        <h3>Latency vs personalization</h3>
+        <p>
+          Mem0 writes can be async in background threads. This keeps user
+          responses fast while still updating long-term memory.
+        </p>
+      </section>
 
-        <section id="ops" class="section">
-          <h2>Scheduling and ops</h2>
-          <p>
-            The Slack notification loop runs in-process and sends reminders based on
-            <span class="code">SLACK_NOTIFY_INTERVAL_SECONDS</span>. Overdue archival
-            is intentionally separate as a cron endpoint so you can schedule it
-            externally and avoid web service sleep issues.
-          </p>
-          <div class="callout">
-            <h3>Render Cron Job command</h3>
-            <pre><code>curl -s -X POST \
+      <section id="ops" class="section">
+        <h2>Scheduling and ops</h2>
+        <p>
+          The Slack notification loop runs in-process and sends reminders based on
+          <span class="code">SLACK_NOTIFY_INTERVAL_SECONDS</span>. Overdue archival
+          is intentionally separate as a cron endpoint so you can schedule it
+          externally and avoid web service sleep issues.
+        </p>
+        <h3>Render Cron Job command</h3>
+        <pre><code>curl -s -X POST \
   -H "x-cron-token: YOUR_SECRET_TOKEN" \
   https://YOUR-RENDER-URL/cron/archive_overdue</code></pre>
-            <p>
-              Set <span class="code">ARCHIVE_CRON_TOKEN</span> in your Render service
-              env vars to protect the endpoint.
-            </p>
-          </div>
-        </section>
+        <p>
+          Set <span class="code">ARCHIVE_CRON_TOKEN</span> in your Render service
+          env vars to protect the endpoint.
+        </p>
+      </section>
 
-        <section class="section">
-          <h2>Where to explore next</h2>
-          <p>
-            This repo is ready to extend. A few natural additions are multi-workspace
-            Slack installs, user-level timezone preferences in Mem0, and a compact
-            analytics dashboard powered by behavior stats.
-          </p>
-        </section>
-      </main>
+      <section class="section">
+        <h2>Where to explore next</h2>
+        <p>
+          This repo is ready to extend. A few natural additions are multi-workspace
+          Slack installs, user-level timezone preferences in Mem0, and a compact
+          analytics dashboard powered by behavior stats.
+        </p>
+      </section>
 
       <footer class="footer">
         <p>Built as a memory-first Slack agent, documented for builders.</p>
         <p>Repo: <span class="code">/agent-backend</span></p>
       </footer>
-    </div>
+    </main>
   </body>
 </html>

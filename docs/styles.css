@@ -19,14 +19,9 @@ body {
 }
 
 .page {
-  max-width: 1100px;
+  max-width: 840px;
   margin: 0 auto;
-  padding: 56px 24px 80px;
-}
-
-.hero {
-  padding: 32px 0 16px;
-  border-bottom: 1px solid var(--stroke);
+  padding: 48px 20px 64px;
 }
 
 .hero__brand {
@@ -63,136 +58,31 @@ h1 {
   color: var(--muted);
 }
 
-.hero__meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 18px;
-}
-
-.hero__meta span {
-  border: 1px solid var(--stroke);
-  padding: 6px 10px;
-  border-radius: 6px;
-  font-size: 0.82rem;
-  background: #fff;
-}
-
-main {
-  margin-top: 36px;
-  display: grid;
-  gap: 32px;
-}
-
-.toc {
-  padding: 18px 0;
-  border-bottom: 1px solid var(--stroke);
-}
-
-.toc__grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 8px;
-  margin-top: 12px;
-}
-
-.toc__grid a {
-  padding: 10px 12px;
-  border-radius: 6px;
-  text-decoration: none;
-  color: var(--ink);
-  border: 1px solid var(--stroke);
-  background: #fff;
-}
-
-.toc__grid a:hover {
-  border-color: var(--accent);
+.meta-line {
+  color: var(--muted);
+  font-size: 0.95rem;
+  margin-top: 16px;
 }
 
 .section {
-  padding: 8px 0;
-  border-bottom: 1px solid var(--stroke);
+  padding: 24px 0;
 }
 
 .section h2 {
   font-family: "Source Serif 4", "Times New Roman", serif;
   font-size: 1.8rem;
   margin-top: 0;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--stroke);
+}
+
+.section h3 {
+  margin-top: 20px;
 }
 
 .section p {
   color: var(--muted);
   line-height: 1.7;
-}
-
-.cards {
-  display: grid;
-  gap: 16px;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  margin-top: 16px;
-}
-
-.card {
-  padding: 14px 14px 16px;
-  border-radius: 8px;
-  background: var(--card);
-  border: 1px solid var(--stroke);
-}
-
-.card h3 {
-  margin-top: 0;
-  font-size: 1.1rem;
-}
-
-.steps {
-  list-style: none;
-  padding: 0;
-  margin: 20px 0 0;
-  display: grid;
-  gap: 18px;
-}
-
-.steps li {
-  padding: 14px 16px;
-  border-radius: 8px;
-  border: 1px solid var(--stroke);
-  background: #fff;
-}
-
-.steps h3 {
-  margin-top: 0;
-}
-
-.grid {
-  display: grid;
-  gap: 16px;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  margin-top: 20px;
-}
-
-.pill {
-  padding: 12px;
-  border-radius: 8px;
-  border: 1px solid var(--stroke);
-  background: #fff;
-}
-
-.pill h3 {
-  margin-top: 0;
-}
-
-.callout {
-  margin-top: 16px;
-  padding: 16px;
-  border-radius: 8px;
-  border: 1px solid var(--stroke);
-  background: #f8f8f8;
-  color: var(--ink);
-}
-
-.callout h3 {
-  margin-top: 0;
-  color: var(--ink);
 }
 
 pre {
@@ -211,10 +101,11 @@ code,
 }
 
 .footer {
-  margin-top: 32px;
-  padding: 12px 0;
+  margin-top: 16px;
+  padding-top: 16px;
   color: var(--muted);
   text-align: left;
+  border-top: 1px solid var(--stroke);
 }
 
 @media (max-width: 720px) {
