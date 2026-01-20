@@ -434,7 +434,7 @@ Keep it human, helpful, and focused on the user's goals."""</code></pre>
           Once the app is created, you enable Events, Commands, and Interactivity and paste in the endpoints your FastAPI service exposes. For MeowMem0, the app expects <span class="code">/slack/events</span> for event callbacks, <span class="code">/slack/commands</span> for slash commands, and <span class="code">/slack/interactions</span> for button actions. The signing secret and bot token are stored in the backend environment so the service can verify requests and post responses back into Slack.
         </p>
         <p>
-          Slack requires a public HTTPS endpoint. For local development, expose your server with a tunneling tool like <span class="highlight-red-italic">ngrok</span> and use its URL in the Slack app settings. For production, deploy to a hosted service (<span class="highlight-red-italic">Render</span>, <span class="highlight-red-italic">Fly</span>, <span class="highlight-red-italic">Railway</span>, or similar) and use that stable URL for event and interaction callbacks.
+          Slack requires a public HTTPS endpoint. For local development, expose your server with a tunneling tool like <span class="highlight-red-italic">ngrok</span> and use its URL in the Slack app settings. For production, deploy to a hosted service (<span class="highlight-red-italic">Render</span>, <span class="highlight-red-italic">Fly</span>, <span class="highlight-red-italic">Railway</span>, or similar) and use that stable URL for event and interaction callbacks. Note that free-tier hosting often introduces cold starts after inactivity, so the first request in a new conversation can have higher latency.
         </p>
         <figure class="media">
           <img

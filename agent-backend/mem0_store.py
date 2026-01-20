@@ -504,6 +504,18 @@ class Mem0Store:
                             user_id=user_id
                         )
                 
+                if isinstance(results, str):
+                    try:
+                        results = json.loads(results)
+                    except Exception:
+                        if self.debug:
+                            print("Mem0 get all returned non-JSON string:", results)
+                        return []
+                if not isinstance(results, list):
+                    if self.debug:
+                        print("Mem0 get all returned unexpected type:", type(results))
+                    return []
+
                 memories = [
                     {
                         "id": item.get("id"),
@@ -514,6 +526,7 @@ class Mem0Store:
                         "updated_at": item.get("updated_at")
                     }
                     for item in results
+                    if isinstance(item, dict)
                 ]
                 if categories:
                     category_set = set(categories)

@@ -58,6 +58,7 @@ Use any hosted service with HTTPS (Render, Fly, Railway, etc). Example for Rende
 4) Start Command: `uvicorn main:app --host 0.0.0.0 --port $PORT`  
 5) Add env vars from `.env` in Render’s dashboard  
 6) Use the Render URL as your Slack Request URL base
+Note: free-tier hosting typically introduces cold starts after inactivity, so the first request in a new conversation can be slower.
 
 ## Slack integration (optional)
 1) Create a Slack app at https://api.slack.com/apps  
