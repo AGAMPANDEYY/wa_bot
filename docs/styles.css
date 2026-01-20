@@ -85,6 +85,26 @@ h1 {
   line-height: 1.7;
 }
 
+.tool-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 16px 0;
+  font-size: 0.98rem;
+}
+
+.tool-table th,
+.tool-table td {
+  text-align: left;
+  padding: 10px 8px;
+  border-bottom: 1px solid var(--stroke);
+  vertical-align: top;
+}
+
+.tool-table th {
+  color: var(--ink);
+  font-weight: 600;
+}
+
 pre {
   margin: 12px 0;
   background: #ffffff;

@@ -49,7 +49,7 @@
           We’ll start from a product perspective—what MeowMemo feels like to use and why it behaves differently from typical bots. Then we’ll switch gears into a deep engineering section that walks through the system design in enough detail that you could realistically build something similar yourself.
         </p>
         <p class="meta-line">
-          FastAPI + Slack Events · Mem0 memory model · SQLite/Supabase ground truth · Render-ready ops
+          Claude Agent SDK · FastAPI + Slack Events · Mem0 memory model · SQLite/Supabase ground truth · Render-ready ops
         </p>
       </header>
 
@@ -272,6 +272,101 @@
         </p>
         <p>
           This design makes the system auditable, testable, and resilient to model drift.
+        </p>
+      </section>
+
+      <section class="section" id="claude-agent">
+        <h2>Claude Agent integration and tool contract</h2>
+        <p>
+          We integrate the Claude Agent SDK as the orchestration layer, but we keep its
+          surface area narrow. The agent does not mutate state directly. It reasons,
+          selects a tool, and returns structured inputs. Deterministic code executes
+          the change, logs it, and syncs memory. This separation is what keeps the
+          system trustworthy when the model inevitably makes mistakes.
+        </p>
+        <p>
+          The toolset is intentionally small and typed. Each tool maps to a concrete
+          function in <span class="code">agent-backend/main.py</span>, with the database
+          as source of truth and Mem0 as long-term context. If you remove this tool
+          boundary, you lose auditability and open the door to hallucinated updates.
+        </p>
+        <table class="tool-table">
+          <thead>
+            <tr>
+              <th>Tool</th>
+              <th>What it does</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>create_reminder</td>
+              <td>Create a reminder with natural-language time parsing and category inference.</td>
+            </tr>
+            <tr>
+              <td>update_reminder</td>
+              <td>Change title, description, or due time; marks reschedules for behavior tracking.</td>
+            </tr>
+            <tr>
+              <td>mark_done</td>
+              <td>Complete a reminder and move its memory to the archived category.</td>
+            </tr>
+            <tr>
+              <td>snooze_reminder</td>
+              <td>Push a reminder forward and record the snooze interval.</td>
+            </tr>
+            <tr>
+              <td>list_reminders</td>
+              <td>Return DB-backed lists (active, completed, all) with stable formatting.</td>
+            </tr>
+            <tr>
+              <td>search_reminders</td>
+              <td>Search reminders by title/description in the database.</td>
+            </tr>
+            <tr>
+              <td>delete_reminder</td>
+              <td>Delete a reminder only when the user explicitly asks.</td>
+            </tr>
+            <tr>
+              <td>set_preference</td>
+              <td>Write long-term preferences into Mem0 memory.</td>
+            </tr>
+            <tr>
+              <td>get_preferences</td>
+              <td>Read preferences from Mem0 and return them to the agent.</td>
+            </tr>
+            <tr>
+              <td>list_rescheduled_reminders</td>
+              <td>Surface reminders with reschedule history from Mem0 or DB.</td>
+            </tr>
+            <tr>
+              <td>clarify_reminder</td>
+              <td>Ask the user to disambiguate when multiple reminders match.</td>
+            </tr>
+          </tbody>
+        </table>
+        <p>
+          [CODE PLACEHOLDER: Claude Agent SDK call + tool schema wiring]
+        </p>
+      </section>
+
+      <section class="section" id="prompt-building">
+        <h2>Prompt building: truth first, memory second</h2>
+        <p>
+          The prompt is assembled from two very different sources. First, we load
+          the current reminder state from the database so the model always sees
+          what is actually true. Then we enrich with Mem0-derived behavior and
+          preference signals, such as common confirmation times and snooze habits.
+          This keeps the assistant personalized without letting memory override
+          reality.
+        </p>
+        <p>
+          We keep context intentionally slim: active reminders and rescheduled
+          reminders from the DB, plus targeted memory queries for preferences and
+          behavior. This works as implicit guidance without relying on brittle
+          few-shot examples that can go stale.
+        </p>
+        <p>
+          [CODE PLACEHOLDER: system prompt assembly showing DB reminders + Mem0 memory context]
         </p>
       </section>
 
