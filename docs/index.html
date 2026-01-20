@@ -48,7 +48,7 @@
           At <a href="https://mem0.ai/" target="_blank" rel="noopener noreferrer">Mem0</a>, we built MeowMem0, a Slack reminder agent, to explore what happens when memory is treated as a first-class architectural concern rather than an afterthought. The result is not just a better reminder experience, but a reusable pattern for building AI agents that can remember without hallucinating, adapt without drifting, and archive without forgetting. This post tells that story in two parts. We’ll start from a product perspective, what MeowMem0 feels like to use and why it behaves differently from typical bots. Then we’ll switch gears into a deep engineering section that walks through the system design in enough detail that you could realistically build something similar yourself.
         </p>
         <p class="meta-line">
-          The agent is orchestrated with the <a href="https://platform.claude.com/docs/en/agent-sdk/overview" target="_blank" rel="noopener noreferrer">Claude Agent SDK</a>, delivered through Slack events, and grounded in a relational database (SQLite locally, Supabase in production). Long-term personalization comes from the <a href="https://docs.mem0.ai/introduction" target="_blank" rel="noopener noreferrer">Mem0 memory model</a>, and the backend FastAPI system is packaged to run on Render(Free Tier).
+          The agent is orchestrated with the <a href="https://platform.claude.com/docs/en/agent-sdk/overview" target="_blank" rel="noopener noreferrer">Claude Agent SDK</a>, delivered through Slack events, and grounded in a relational database (SQLite locally, Supabase in production). Long-term personalization comes from the <a href="https://docs.mem0.ai/introduction" target="_blank" rel="noopener noreferrer">Mem0 memory model</a>, and the backend FastAPI system is packaged to run on hosted services such as Render (free tier).
         </p>
       </header>
 
@@ -432,6 +432,9 @@ Keep it human, helpful, and focused on the user's goals."""</code></pre>
           The backend endpoints are only half the story. To make the bot real, you register a Slack app and point it to your public URLs. This is done in the Slack app dashboard at
           <a href="https://api.slack.com/apps" target="_blank" rel="noopener noreferrer">api.slack.com/apps</a>.
           Once the app is created, you enable Events, Commands, and Interactivity and paste in the endpoints your FastAPI service exposes. For MeowMem0, the app expects <span class="code">/slack/events</span> for event callbacks, <span class="code">/slack/commands</span> for slash commands, and <span class="code">/slack/interactions</span> for button actions. The signing secret and bot token are stored in the backend environment so the service can verify requests and post responses back into Slack.
+        </p>
+        <p>
+          Slack requires a public HTTPS endpoint. For local development, expose your server with a tunneling tool like <span class="highlight-red-italic">ngrok</span> and use its URL in the Slack app settings. For production, deploy to a hosted service (<span class="highlight-red-italic">Render</span>, <span class="highlight-red-italic">Fly</span>, <span class="highlight-red-italic">Railway</span>, or similar) and use that stable URL for event and interaction callbacks.
         </p>
         <figure class="media">
           <img
