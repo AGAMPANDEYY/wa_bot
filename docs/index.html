@@ -49,7 +49,11 @@
           We’ll start from a product perspective—what MeowMemo feels like to use and why it behaves differently from typical bots. Then we’ll switch gears into a deep engineering section that walks through the system design in enough detail that you could realistically build something similar yourself.
         </p>
         <p class="meta-line">
-          Claude Agent SDK · FastAPI + Slack Events · Mem0 memory model · SQLite/Supabase ground truth · Render-ready ops
+          <a href="https://platform.claude.com/docs/en/agent-sdk/overview" target="_blank" rel="noopener noreferrer">Claude Agent SDK</a>
+          · FastAPI + Slack Events
+          · <a href="https://docs.mem0.ai/introduction" target="_blank" rel="noopener noreferrer">Mem0 memory model</a>
+          · SQLite/Supabase ground truth
+          · Render-ready ops
         </p>
       </header>
 
@@ -149,7 +153,9 @@
           Mem0, which holds long-term memory
         </p>
         <p>
-          An LLM-based agent sits at the center, but it never directly mutates state. It reasons, decides, and calls tools—but all real changes happen in deterministic code.
+          An LLM-based agent sits at the center, but it never directly mutates state. It reasons, decides, and calls tools—but all real changes happen in deterministic code, with the model driven by the
+          <a href="https://platform.claude.com/docs/en/agent-sdk/overview" target="_blank" rel="noopener noreferrer">Claude Agent SDK</a>
+          and a constrained tool surface.
         </p>
         <p>
           [ARCHITECTURE DIAGRAM PLACEHOLDER: Slack → FastAPI → Agent → DB + Mem0]
@@ -278,7 +284,7 @@
       <section class="section" id="claude-agent">
         <h2>Claude Agent integration and tool contract</h2>
         <p>
-          We integrate the Claude Agent SDK as the orchestration layer, but we keep its
+          We integrate the <a href="https://platform.claude.com/docs/en/agent-sdk/overview" target="_blank" rel="noopener noreferrer">Claude Agent SDK</a> as the orchestration layer, but we keep its
           surface area narrow. The agent does not mutate state directly. It reasons,
           selects a tool, and returns structured inputs. Deterministic code executes
           the change, logs it, and syncs memory. This separation is what keeps the
@@ -413,7 +419,8 @@
       <section class="section" id="mem0">
         <h2>Mem0: long-term memory without drift</h2>
         <p>
-          Mem0 stores long-term signals and a mirrored reminder history using explicit categories:
+          <a href="https://docs.mem0.ai/introduction" target="_blank" rel="noopener noreferrer">Mem0</a>
+          stores long-term signals and a mirrored reminder history using explicit categories:
         </p>
         <p>
           Active reminders
@@ -457,6 +464,28 @@
         </p>
       </section>
 
+      <section class="section" id="slack-app-setup">
+        <h2>Slack app integration: wiring the bot into a workspace</h2>
+        <p>
+          The backend endpoints are only half the story. To make the bot real, you
+          register a Slack app and point it to your public URLs. This is done in the
+          Slack app dashboard at
+          <a href="https://api.slack.com/apps" target="_blank" rel="noopener noreferrer">api.slack.com/apps</a>.
+          Once the app is created, you enable Events, Commands, and Interactivity and
+          paste in the endpoints your FastAPI service exposes.
+        </p>
+        <p>
+          For MeowMemo, the app expects <span class="code">/slack/events</span> for
+          event callbacks, <span class="code">/slack/commands</span> for slash commands,
+          and <span class="code">/slack/interactions</span> for button actions. The
+          signing secret and bot token are stored in the backend environment so the
+          service can verify requests and post responses back into Slack.
+        </p>
+        <p>
+          [SCREENSHOT PLACEHOLDER: Slack app settings with Events + Interactivity URLs]
+        </p>
+      </section>
+
       <section class="section" id="what-this-enables">
         <h2>What this architecture enables</h2>
         <p>
@@ -475,7 +504,9 @@
           You can build assistants that improve over time without becoming unreliable.
         </p>
         <p>
-          This is what memory layers like Mem0 are actually for—not longer context windows, but clean, intentional persistence.
+          This is what memory layers like Mem0 are actually for—not longer context windows, but clean, intentional persistence. The underlying model capabilities are anchored by the
+          <a href="https://platform.claude.com/docs/en/home" target="_blank" rel="noopener noreferrer">Claude platform</a>,
+          but the reliability comes from the contract we enforce around it.
         </p>
         <p>
           If you’re building agents meant to live beyond a demo, this boundary between state and memory isn’t optional. It’s the difference between something users try once and something they trust every day.
