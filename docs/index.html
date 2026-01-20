@@ -444,11 +444,14 @@ Keep it human, helpful, and focused on the user's goals."""</code></pre>
       </section>
 
       <section class="section" id="what-this-enables">
-        <h2>What this architecture enables</h2>
+        <h2>Why this architecture scales?</h2>
         <p>
-          MeowMem0 is not interesting because it sends reminders. It’s interesting because it demonstrates a pattern for building AI agents that last. You can have long-term personalization without letting memory become truth. You can archive without forgetting. You can adapt behavior without inflating prompts. You can build assistants that improve over time without becoming unreliable. This is what memory layers like Mem0 are actually for, not longer context windows, but clean, intentional persistence. The underlying model capabilities are anchored by the
-          <a href="https://platform.claude.com/docs/en/home" target="_blank" rel="noopener noreferrer">Claude platform</a>,
-          but the reliability comes from the contract we enforce around it. If you’re building agents meant to live beyond a demo, this boundary between state and memory isn’t optional. It’s the difference between something users try once and something they trust every day.
+          This architecture is valuable not because it sends reminders, but because it scales trust. It lets you personalize without letting memory become truth, and it lets you archive without erasing history. The agent can learn from behavior while the system remains deterministic, auditable, and safe.
+        </p>
+        <p>
+          That balance is what makes memory layers like Mem0 useful. The
+          <a href="https://platform.claude.com/docs/en/home" target="_blank" rel="noopener noreferrer">Claude platform</a>
+          gives the model its reasoning power, but the reliability comes from the contract we enforce around state and tools. If you’re building agents meant to live beyond a demo, this boundary between state and memory isn’t optional. It’s the difference between a one‑off demo and a system people trust daily.
         </p>
         <div class="callout">
           <p class="callout-title">Key takeaway</p>
@@ -461,10 +464,7 @@ Keep it human, helpful, and focused on the user's goals."""</code></pre>
         </p>
       </section>
 
-        <footer class="footer">
-          <p>Built as a memory-first Slack agent, documented for builders.</p>
-          <p>Repo: <span class="code">/agent-backend</span></p>
-        </footer>
+        <footer class="footer"></footer>
       </div>
       <aside class="sidebar" aria-label="On this page">
         <p class="sidebar-title">On this page</p>
