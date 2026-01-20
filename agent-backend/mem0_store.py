@@ -65,17 +65,21 @@ class Mem0Store:
         return result
 
     def _search_with_filters(self, **kwargs) -> List[Dict[str, Any]]:
-        """Wrapper to satisfy Mem0 v2 search filter requirements."""
+        """Wrapper to satisfy Mem0 Platform search filter requirements."""
         user_id = kwargs.get("user_id")
-        if user_id:
-            kwargs.setdefault("filters", {"AND": [{"user_id": user_id}]})
-        kwargs.setdefault("version", "v2")
+        categories = kwargs.get("categories")
+        if user_id or categories:
+            and_filters = []
+            if user_id:
+                and_filters.append({"user_id": user_id})
+            if categories:
+                and_filters.append({"categories": {"in": categories}})
+            kwargs.setdefault("filters", {"AND": and_filters})
         try:
             results = self.client.search(**kwargs)
         except TypeError:
             # Older SDKs may not support filters/version.
             kwargs.pop("filters", None)
-            kwargs.pop("version", None)
             results = self.client.search(**kwargs)
 
         if isinstance(results, str):
@@ -91,7 +95,10 @@ class Mem0Store:
                 if user_id and "Filters are required" in str(results.get("error")):
                     retry_kwargs = dict(kwargs)
                     retry_kwargs.pop("user_id", None)
-                    retry_kwargs["filters"] = {"AND": [{"user_id": user_id}]}
+                    retry_filters = [{"user_id": user_id}]
+                    if categories:
+                        retry_filters.append({"categories": {"in": categories}})
+                    retry_kwargs["filters"] = {"AND": retry_filters}
                     try:
                         results = self.client.search(**retry_kwargs)
                     except Exception:
@@ -276,23 +283,7 @@ class Mem0Store:
 
         try:
             if existing_memory_id:
-                try:
-                    self.client.update(
-                        memory_id=existing_memory_id,
-                        text=text,
-                        metadata=metadata,
-                        version="v2"
-                    )
-                    return existing_memory_id
-                except TypeError:
-                    self.client.update(
-                        memory_id=existing_memory_id,
-                        data=text
-                    )
-                    if metadata:
-                        self.client.delete(existing_memory_id)
-                    else:
-                        return existing_memory_id
+                self.client.delete(existing_memory_id)
 
             result = self._add_with_retry(
                 messages=[{"role": "user", "content": text}],
@@ -300,7 +291,6 @@ class Mem0Store:
                 metadata=metadata,
                 categories=[self.CAT_REMINDER_ACTIVE],
                 async_mode=False,
-                version="v2",
             )
             if self.debug:
                 print("Mem0 add (active) payload:", {
@@ -348,7 +338,6 @@ class Mem0Store:
                     metadata=metadata,
                     categories=[self.CAT_REMINDER_ARCHIVED],
                     async_mode=False,
-                    version="v2",
                 )
                 if self.debug:
                     print("Mem0 add (archived) payload:", {
@@ -393,13 +382,7 @@ class Mem0Store:
 
             try:
                 if existing_memory_id:
-                    self.client.update(
-                        memory_id=existing_memory_id,
-                        text=text,
-                        metadata=metadata,
-                        version="v2"
-                    )
-                    return existing_memory_id
+                    self.client.delete(existing_memory_id)
 
                 result = self._add_with_retry(
                     messages=[{"role": "user", "content": text}],
@@ -407,7 +390,6 @@ class Mem0Store:
                     metadata=metadata,
                     categories=[self.CAT_USER_PREFS],
                     async_mode=False,
-                    version="v2",
                 )
                 if self.debug:
                     print("Mem0 add (prefs) payload:", {
@@ -450,13 +432,7 @@ class Mem0Store:
 
         try:
             if existing_memory_id:
-                self.client.update(
-                    memory_id=existing_memory_id,
-                    text=text,
-                    metadata=metadata,
-                    version="v2"
-                )
-                return existing_memory_id
+                self.client.delete(existing_memory_id)
 
             result = self._add_with_retry(
                 messages=[{"role": "user", "content": text}],
@@ -464,7 +440,6 @@ class Mem0Store:
                 metadata=metadata,
                 categories=[self.CAT_USER_BEHAVIOR],
                 async_mode=False,
-                version="v2",
             )
             if self.debug:
                 print("Mem0 add (behavior) payload:", {
@@ -502,7 +477,6 @@ class Mem0Store:
                 metadata=metadata,
                 categories=[self.CAT_CONVERSATION],
                 async_mode=False,
-                version="v2",
             )
             if self.debug:
                 print("Mem0 add (conversation) payload:", {
@@ -537,8 +511,7 @@ class Mem0Store:
             try:
                 try:
                     results = self.client.get_all(
-                        filters={"AND": [{"user_id": user_id}]},
-                        version="v2"
+                        filters={"AND": [{"user_id": user_id}]}
                     )
                 except TypeError:
                     try:
